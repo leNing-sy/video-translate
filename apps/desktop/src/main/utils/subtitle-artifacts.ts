@@ -363,6 +363,50 @@ async function reserveArtifactPaths(
     }
   }
 }
+
+/** 仅生成原文 SRT；同名时递增编号，避免覆盖已有文件。 */
+export async function writeOriginalSubtitleArtifact(options: {
+  segments: Array<DisplaySegment | TranscriptionSegment>
+  outputDir: string
+  baseName: string
+  sourceSuffix: string
+  videoSize?: Partial<VideoDisplaySize> | null
+}): Promise<{ original: string; outputDirectory: string }> {
+  const { segments, outputDir, baseName, sourceSuffix, videoSize } = options
+  await fs.mkdir(outputDir, { recursive: true })
+
+  for (let sequence = 1; ; sequence += 1) {
+    const version = sequence === 1 ? '' : `.${sequence}`
+    const original = path.join(
+      outputDir,
+      `${baseName}_${sourceSuffix}${version}.srt`
+    )
+    let reserved = false
+    try {
+      const handle = await fs.open(original, 'wx')
+      reserved = true
+      await handle.close()
+      const subtitles = segmentsToOriginalSubtitles(segments, videoSize)
+      await SubtitleGenerator.saveSubtitle(subtitles, original, 'srt')
+      return { original, outputDirectory: outputDir }
+    } catch (error) {
+      if (
+        !reserved &&
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'EEXIST'
+      ) {
+        continue
+      }
+      if (reserved) {
+        await removeReservedFiles([original])
+      }
+      throw error
+    }
+  }
+}
+
 export async function writeSubtitleArtifacts(options: {
   segments: Array<DisplaySegment | TranscriptionSegment>
   outputDir: string

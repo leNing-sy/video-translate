@@ -8,7 +8,10 @@ import dayjs from 'dayjs'
 import { app, type BrowserWindow } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
 import { IpcChannels } from '../../shared/ipc'
-import type { AppSettings, SubtitleBurnMode } from '../../shared/settings'
+import type {
+  SubtitleBurnMode,
+  TaskCreationSettings,
+} from '../../shared/settings'
 import {
   normalizeTaskRuntimeOptions,
   taskOptionsFromAppSettings,
@@ -48,7 +51,7 @@ import {
   runTranslationPipeline,
 } from './translation-pipeline'
 
-export interface CreateTaskOptions extends Partial<AppSettings> {
+export interface CreateTaskOptions extends Partial<TaskCreationSettings> {
   filePath: string
   sourceLanguage: string
   targetLanguage: string
@@ -56,7 +59,7 @@ export interface CreateTaskOptions extends Partial<AppSettings> {
   kind?: TaskKind
 }
 
-export interface CreateUrlTaskOptions extends Partial<AppSettings> {
+export interface CreateUrlTaskOptions extends Partial<TaskCreationSettings> {
   url: string
   sourceLanguage: string
   targetLanguage: string
@@ -392,11 +395,8 @@ export class TaskManager {
       await this.ensureLocalVideoReady(task, controller.signal)
 
       const hooks = {
-        onLog: (
-          level: TaskLog['level'],
-          message: string,
-          details?: string
-        ) => this.addTaskLog(taskId, level, message, details),
+        onLog: (level: TaskLog['level'], message: string, details?: string) =>
+          this.addTaskLog(taskId, level, message, details),
         onStatus: (
           status: TaskStatus,
           progress?: number,
@@ -413,9 +413,7 @@ export class TaskManager {
           const taskRef = this.activeTasks.get(taskId)
           if (taskRef) taskRef.segments = segments
         },
-        onDetectedLanguage: (
-          language: TranslationTask['detectedLanguage']
-        ) => {
+        onDetectedLanguage: (language: TranslationTask['detectedLanguage']) => {
           const taskRef = this.activeTasks.get(taskId)
           if (taskRef) {
             taskRef.detectedLanguage = language
@@ -579,7 +577,9 @@ export class TaskManager {
         'success',
         '已获取平台字幕，将跳过语音识别',
         `${result.platformSubtitle.language}` +
-          (result.platformSubtitle.likelyAuto ? '（自动字幕）' : '（人工字幕）') +
+          (result.platformSubtitle.likelyAuto
+            ? '（自动字幕）'
+            : '（人工字幕）') +
           ` · ${path.basename(result.platformSubtitle.path)}`
       )
     } else {
@@ -636,7 +636,11 @@ export class TaskManager {
 
     task.platformSubtitlePath = selected.path
     task.platformSubtitleLanguage = selected.language
-    databaseManager.savePlatformSubtitle(task.id, selected.path, selected.language)
+    databaseManager.savePlatformSubtitle(
+      task.id,
+      selected.path,
+      selected.language
+    )
     this.activeTasks.set(task.id, task)
     this.notifyTaskUpdate(task)
     this.addTaskLog(
@@ -741,8 +745,7 @@ export class TaskManager {
 
   getTask(taskId: string): TranslationTask | null {
     const task =
-      this.activeTasks.get(taskId) ??
-      databaseManager.getTranslationTask(taskId)
+      this.activeTasks.get(taskId) ?? databaseManager.getTranslationTask(taskId)
     if (!task) return null
     return { ...task, kind: normalizeTaskKind(task.kind) }
   }
@@ -750,7 +753,12 @@ export class TaskManager {
   /** 读取文稿任务润色后的 Markdown 文本 */
   async getTaskMarkdownContent(
     taskId: string
-  ): Promise<{ success: boolean; content?: string; path?: string; error?: string }> {
+  ): Promise<{
+    success: boolean
+    content?: string
+    path?: string
+    error?: string
+  }> {
     const task = this.getTask(taskId)
     if (!task) {
       return { success: false, error: '任务不存在' }
@@ -888,8 +896,7 @@ export class TaskManager {
       return { success: false, error: '该任务正在烧录中' }
     }
 
-    const task =
-      existing ?? databaseManager.getTranslationTask(taskId)
+    const task = existing ?? databaseManager.getTranslationTask(taskId)
     if (!task) {
       return { success: false, error: '任务不存在' }
     }
@@ -922,13 +929,13 @@ export class TaskManager {
     this.abortControllers.set(taskId, controller)
 
     const hooks = {
-      onLog: (
-        level: TaskLog['level'],
-        message: string,
-        details?: string
-      ) => this.addTaskLog(taskId, level, message, details),
-      onStatus: (status: TaskStatus, progress?: number, errorMessage?: string) =>
-        this.updateTaskStatus(taskId, status, progress, errorMessage),
+      onLog: (level: TaskLog['level'], message: string, details?: string) =>
+        this.addTaskLog(taskId, level, message, details),
+      onStatus: (
+        status: TaskStatus,
+        progress?: number,
+        errorMessage?: string
+      ) => this.updateTaskStatus(taskId, status, progress, errorMessage),
       onArtifacts: (artifacts: TaskOutputArtifacts) => {
         task.outputArtifacts = artifacts
         databaseManager.saveTaskArtifacts(taskId, artifacts)

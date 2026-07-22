@@ -5,7 +5,7 @@ import {
   type BurnSubtitleColors,
   type FileDialogMedia,
 } from '../shared/ipc'
-import type { AppSettings, SubtitleBurnMode } from '../shared/settings'
+import type { SubtitleBurnMode, TaskCreationSettings } from '../shared/settings'
 import type { SystemCheckProgress } from '../shared/system-check'
 import type {
   OllamaModel,
@@ -29,20 +29,18 @@ declare global {
       ) => Promise<{ success: boolean; error?: string }>
       uploadFiles: (
         filePaths: string[],
-        settings: AppSettings | Partial<AppSettings>,
+        settings: TaskCreationSettings | Partial<TaskCreationSettings>,
         kind?: TaskKind
       ) => Promise<{ success: boolean; taskIds?: string[]; error?: string }>
       createTasksFromUrls: (
         urls: string[],
-        settings: AppSettings | Partial<AppSettings>,
+        settings: TaskCreationSettings | Partial<TaskCreationSettings>,
         kind?: TaskKind
       ) => Promise<{ success: boolean; taskIds?: string[]; error?: string }>
 
       getAllTasks: (kind?: TaskKind) => Promise<TranslationTask[]>
       getTask: (taskId: string) => Promise<TranslationTask | null>
-      getTaskMarkdownContent: (
-        taskId: string
-      ) => Promise<{
+      getTaskMarkdownContent: (taskId: string) => Promise<{
         success: boolean
         content?: string
         path?: string
@@ -174,12 +172,12 @@ const api = {
     ipcRenderer.invoke(IpcChannels.openTaskArtifact, taskId, kind),
   uploadFiles: (
     filePaths: string[],
-    settings: AppSettings | Partial<AppSettings>,
+    settings: TaskCreationSettings | Partial<TaskCreationSettings>,
     kind?: TaskKind
   ) => ipcRenderer.invoke(IpcChannels.uploadFiles, filePaths, settings, kind),
   createTasksFromUrls: (
     urls: string[],
-    settings: AppSettings | Partial<AppSettings>,
+    settings: TaskCreationSettings | Partial<TaskCreationSettings>,
     kind?: TaskKind
   ) =>
     ipcRenderer.invoke(IpcChannels.createTasksFromUrls, urls, settings, kind),
@@ -201,8 +199,7 @@ const api = {
     taskId: string,
     mode: SubtitleBurnMode,
     colors?: BurnSubtitleColors
-  ) =>
-    ipcRenderer.invoke(IpcChannels.burnTaskSubtitles, taskId, mode, colors),
+  ) => ipcRenderer.invoke(IpcChannels.burnTaskSubtitles, taskId, mode, colors),
   getTaskLogs: (taskId: string) =>
     ipcRenderer.invoke(IpcChannels.getTaskLogs, taskId),
 
@@ -234,15 +231,13 @@ const api = {
   onTaskUpdated: (callback: (task: TranslationTask) => void) => {
     const listener = (_event: unknown, task: TranslationTask) => callback(task)
     ipcRenderer.on(IpcChannels.taskUpdated, listener)
-    return () =>
-      ipcRenderer.removeListener(IpcChannels.taskUpdated, listener)
+    return () => ipcRenderer.removeListener(IpcChannels.taskUpdated, listener)
   },
 
   onTaskDeleted: (callback: (taskId: string) => void) => {
     const listener = (_event: unknown, taskId: string) => callback(taskId)
     ipcRenderer.on(IpcChannels.taskDeleted, listener)
-    return () =>
-      ipcRenderer.removeListener(IpcChannels.taskDeleted, listener)
+    return () => ipcRenderer.removeListener(IpcChannels.taskDeleted, listener)
   },
 
   onOllamaPullProgress: (
