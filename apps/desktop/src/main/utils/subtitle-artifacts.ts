@@ -12,10 +12,7 @@ import type {
   TranscriptionSegment,
 } from '../../shared/types/video'
 import type { DisplaySegment } from './display-segment-builder'
-import {
-  getAsrSourceForArtifacts,
-  getTranslatedText,
-} from './segment-text'
+import { getAsrSourceForArtifacts, getTranslatedText } from './segment-text'
 import { SubtitleGenerator } from './subtitle-generator'
 import {
   computeSubtitleLayout,
@@ -261,7 +258,13 @@ export function selectBurnSubtitleContent(
   if (mode === 'original') {
     return {
       extension: 'ass',
-      content: generateMonolingualAss(segments, 'original', size, 'Sans', colors),
+      content: generateMonolingualAss(
+        segments,
+        'original',
+        size,
+        'Sans',
+        colors
+      ),
     }
   }
   return {
@@ -285,25 +288,32 @@ function buildArtifactPaths(
 ): SubtitleArtifactPaths {
   const version = sequence === 1 ? '' : `.${sequence}`
   return {
-    original: path.join(
-      outputDir,
-      `${baseName}_${sourceSuffix}${version}.srt`
-    ),
+    original: path.join(outputDir, `${baseName}_${sourceSuffix}${version}.srt`),
     translated: path.join(
       outputDir,
       `${baseName}_${targetSuffix}${version}.srt`
     ),
     bilingual: path.join(outputDir, `${baseName}_bilingual${version}.srt`),
-    bilingualAss: path.join(
-      outputDir,
-      `${baseName}_bilingual${version}.ass`
-    ),
+    bilingualAss: path.join(outputDir, `${baseName}_bilingual${version}.ass`),
     outputDirectory: outputDir,
   }
 }
 
 async function removeReservedFiles(paths: string[]): Promise<void> {
-  await Promise.all(paths.map(filePath => fs.unlink(filePath).catch(() => {})))
+  const results = await Promise.allSettled(
+    paths.map(filePath => fs.unlink(filePath))
+  )
+  const failure = results.find(
+    result =>
+      result.status === 'rejected' &&
+      (!result.reason ||
+        typeof result.reason !== 'object' ||
+        !('code' in result.reason) ||
+        result.reason.code !== 'ENOENT')
+  )
+  if (failure?.status === 'rejected') {
+    throw failure.reason
+  }
 }
 
 /** 排他预占整组产物，冲突时整组递增编号。 */

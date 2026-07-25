@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
+import { promises as fs } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, test } from 'vitest'
+import { afterEach, test, vi } from 'vitest'
 import type { TranscriptionSegment } from '../../shared/types/video'
 import {
   generateBilingualAss,
@@ -13,6 +14,7 @@ import {
 let testDirectory: string | undefined
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   if (testDirectory) {
     await rm(testDirectory, { recursive: true, force: true })
     testDirectory = undefined
@@ -171,7 +173,9 @@ test('原文和双语字幕保留 ASR 日语原文而不使用润色文本', asy
   assert.doesNotMatch(ass, /时间即将进入/)
 })
 test('重复生成时整组递增编号且不覆盖已有产物', async () => {
-  testDirectory = await mkdtemp(path.join(tmpdir(), 'subtitle-artifacts-version-'))
+  testDirectory = await mkdtemp(
+    path.join(tmpdir(), 'subtitle-artifacts-version-')
+  )
   const first = await writeSubtitleArtifacts({
     segments: sampleSegments,
     outputDir: testDirectory,
@@ -197,7 +201,9 @@ test('重复生成时整组递增编号且不覆盖已有产物', async () => {
 })
 
 test('候选组部分冲突时不留下其他空占位文件', async () => {
-  testDirectory = await mkdtemp(path.join(tmpdir(), 'subtitle-artifacts-claim-'))
+  testDirectory = await mkdtemp(
+    path.join(tmpdir(), 'subtitle-artifacts-claim-')
+  )
   const occupied = path.join(testDirectory, 'demo_zh.srt')
   await writeFile(occupied, 'existing subtitle', 'utf8')
 
@@ -211,5 +217,39 @@ test('候选组部分冲突时不留下其他空占位文件', async () => {
 
   assert.ok(paths.original.endsWith('demo_en.2.srt'))
   assert.equal(await readFile(occupied, 'utf8'), 'existing subtitle')
-  await assert.rejects(readFile(path.join(testDirectory, 'demo_en.srt'), 'utf8'))
+  await assert.rejects(
+    readFile(path.join(testDirectory, 'demo_en.srt'), 'utf8')
+  )
+})
+
+test('候选组清理失败时中止生成并暴露文件系统错误', async () => {
+  testDirectory = await mkdtemp(
+    path.join(tmpdir(), 'subtitle-artifacts-cleanup-error-')
+  )
+  const occupied = path.join(testDirectory, 'demo_zh.srt')
+  const reserved = path.join(testDirectory, 'demo_en.srt')
+  await writeFile(occupied, 'existing subtitle', 'utf8')
+
+  const unlink = fs.unlink.bind(fs)
+  vi.spyOn(fs, 'unlink').mockImplementation(async filePath => {
+    if (filePath === reserved) {
+      throw Object.assign(new Error('permission denied'), { code: 'EACCES' })
+    }
+    return unlink(filePath)
+  })
+
+  await assert.rejects(
+    writeSubtitleArtifacts({
+      segments: sampleSegments,
+      outputDir: testDirectory,
+      baseName: 'demo',
+      sourceSuffix: 'en',
+      targetSuffix: 'zh',
+    }),
+    error =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'EACCES' &&
+      error.message === 'permission denied'
+  )
 })
