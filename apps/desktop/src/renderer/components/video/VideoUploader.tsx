@@ -272,60 +272,51 @@ export function VideoUploader({
   return (
     <div className="flex flex-col gap-4">
       {!isDocument && (
-        <Card className="gap-0 py-0">
-          <CardContent className="space-y-4 px-5 py-4">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-sm font-semibold">本次任务</h2>
-              <p className="text-xs text-muted-foreground">
-                这些选项只影响接下来添加的任务。
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>处理方式</Label>
+        <Card size="sm" className="gap-0 py-0">
+          <CardContent className="space-y-2 px-4 py-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div
-                className="grid grid-cols-2 gap-2"
+                className="grid w-full grid-cols-2 gap-0.5 rounded-lg bg-muted p-0.5 sm:w-auto sm:min-w-[15.5rem]"
                 role="group"
-                aria-label="字幕处理方式"
+                aria-label="处理方式"
               >
                 {(
                   [
                     ['translate', '翻译字幕'],
                     ['extract', '仅提取原文'],
                   ] as const
-                ).map(([value, label]) => (
-                  <Button
-                    key={value}
-                    type="button"
-                    variant={
-                      taskOptions.subtitleProcessingMode === value
-                        ? 'default'
-                        : 'outline'
-                    }
-                    aria-pressed={taskOptions.subtitleProcessingMode === value}
-                    onClick={() =>
-                      setTaskOptions(previous =>
-                        normalizeTaskSubmissionOptions({
-                          ...previous,
-                          subtitleProcessingMode:
-                            value as SubtitleProcessingMode,
-                        })
-                      )
-                    }
-                  >
-                    {label}
-                  </Button>
-                ))}
+                ).map(([value, label]) => {
+                  const selected =
+                    taskOptions.subtitleProcessingMode === value
+                  return (
+                    <Button
+                      key={value}
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      aria-pressed={selected}
+                      className={
+                        selected
+                          ? 'bg-background text-foreground shadow-xs hover:bg-background hover:text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }
+                      onClick={() =>
+                        setTaskOptions(previous =>
+                          normalizeTaskSubmissionOptions({
+                            ...previous,
+                            subtitleProcessingMode:
+                              value as SubtitleProcessingMode,
+                          })
+                        )
+                      }
+                    >
+                      {label}
+                    </Button>
+                  )
+                })}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {taskOptions.subtitleProcessingMode === 'extract'
-                  ? '跳过润色和翻译，只生成原文 SRT，无需 Ollama。'
-                  : '生成原文、译文和双语字幕，需要 Ollama。'}
-              </p>
-            </div>
 
-            <div className="space-y-3 border-t border-border pt-4">
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <input
                   id="task-burn-subtitles"
                   type="checkbox"
@@ -338,56 +329,64 @@ export function VideoUploader({
                       })
                     )
                   }
-                  className="h-4 w-4 rounded border-input accent-brand"
+                  className="h-3.5 w-3.5 rounded border-input accent-brand"
                 />
-                <Label htmlFor="task-burn-subtitles">烧录硬字幕到视频</Label>
+                <Label
+                  htmlFor="task-burn-subtitles"
+                  className="text-xs font-normal text-muted-foreground"
+                >
+                  烧录硬字幕
+                </Label>
               </div>
-
-              {taskOptions.burnSubtitles &&
-                taskOptions.subtitleProcessingMode === 'translate' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="task-burn-mode">烧录内容</Label>
-                    <Select
-                      value={taskOptions.burnSubtitleMode}
-                      onValueChange={value => {
-                        if (value == null) return
-                        setTaskOptions(previous =>
-                          normalizeTaskSubmissionOptions({
-                            ...previous,
-                            burnSubtitleMode: value as SubtitleBurnMode,
-                          })
-                        )
-                      }}
-                      items={{
-                        bilingual: '双语堆叠（原文上 / 译文下）',
-                        translated: '仅译文',
-                        original: '仅原文',
-                      }}
-                    >
-                      <SelectTrigger
-                        id="task-burn-mode"
-                        className="w-full min-w-0"
-                      >
-                        <SelectValue placeholder="选择烧录内容" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="bilingual">
-                          双语堆叠（原文上 / 译文下）
-                        </SelectItem>
-                        <SelectItem value="translated">仅译文</SelectItem>
-                        <SelectItem value="original">仅原文</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-              {taskOptions.burnSubtitles &&
-                taskOptions.subtitleProcessingMode === 'extract' && (
-                  <p className="text-xs text-muted-foreground">
-                    仅提取模式会烧录原文字幕。
-                  </p>
-                )}
             </div>
+
+            <p className="text-xs text-muted-foreground">
+              {taskOptions.subtitleProcessingMode === 'extract'
+                ? '只生成原文 SRT，无需 Ollama'
+                : '生成原文 / 译文 / 双语 · 需 Ollama'}
+            </p>
+
+            {taskOptions.burnSubtitles &&
+              taskOptions.subtitleProcessingMode === 'translate' && (
+                <Select
+                  value={taskOptions.burnSubtitleMode}
+                  onValueChange={value => {
+                    if (value == null) return
+                    setTaskOptions(previous =>
+                      normalizeTaskSubmissionOptions({
+                        ...previous,
+                        burnSubtitleMode: value as SubtitleBurnMode,
+                      })
+                    )
+                  }}
+                  items={{
+                    bilingual: '烧录：双语堆叠',
+                    translated: '烧录：仅译文',
+                    original: '烧录：仅原文',
+                  }}
+                >
+                  <SelectTrigger
+                    id="task-burn-mode"
+                    size="sm"
+                    className="w-full min-w-0"
+                    aria-label="烧录内容"
+                  >
+                    <SelectValue placeholder="烧录内容" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bilingual">
+                      烧录：双语堆叠（原文上 / 译文下）
+                    </SelectItem>
+                    <SelectItem value="translated">烧录：仅译文</SelectItem>
+                    <SelectItem value="original">烧录：仅原文</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+
+            {taskOptions.burnSubtitles &&
+              taskOptions.subtitleProcessingMode === 'extract' && (
+                <p className="text-xs text-muted-foreground">将烧录原文字幕</p>
+              )}
           </CardContent>
         </Card>
       )}

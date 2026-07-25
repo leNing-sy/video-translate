@@ -292,12 +292,12 @@ export function MainScreen() {
           >
             <div className="flex flex-col gap-1">
               <h1 className="text-lg font-semibold tracking-tight text-foreground text-balance">
-                {isDocument ? '添加要整理的音视频' : '添加要翻译的视频'}
+                {isDocument ? '添加要整理的音视频' : '添加要生成字幕的视频'}
               </h1>
               <p className="text-sm text-muted-foreground">
                 {isDocument
                   ? '本地文件或在线链接，识别语音并整理为 Markdown 文稿'
-                  : '本地文件或在线链接，自动识别语音并生成本地字幕'}
+                  : '本地文件或在线链接，识别后生成字幕；可翻译或仅提取原文'}
               </p>
             </div>
 
