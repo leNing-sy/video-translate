@@ -31,6 +31,7 @@ export const IpcChannels = {
   pauseTask: 'pause-task',
   resumeTask: 'resume-task',
   deleteTask: 'delete-task',
+  deleteTasks: 'delete-tasks',
   retryTask: 'retry-task',
   burnTaskSubtitles: 'burn-task-subtitles',
   getTaskLogs: 'get-task-logs',
@@ -93,6 +94,16 @@ export interface FailureResult {
 }
 
 export type SimpleResult = SuccessResult | FailureResult
+
+export interface DeleteTasksResult {
+  success: boolean
+  deletedTaskIds: string[]
+  rejected: Array<{
+    taskId: string
+    reason: string
+  }>
+  error?: string
+}
 
 export interface UploadFilesResult {
   success: boolean

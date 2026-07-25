@@ -3,6 +3,7 @@ import {
   IpcChannels,
   type ArtifactKind,
   type BurnSubtitleColors,
+  type DeleteTasksResult,
   type FileDialogMedia,
 } from '../shared/ipc'
 import type { SubtitleBurnMode, TaskCreationSettings } from '../shared/settings'
@@ -49,6 +50,7 @@ declare global {
       pauseTask: (taskId: string) => Promise<{ success: boolean }>
       resumeTask: (taskId: string) => Promise<{ success: boolean }>
       deleteTask: (taskId: string) => Promise<{ success: boolean }>
+      deleteTasks: (taskIds: string[]) => Promise<DeleteTasksResult>
       retryTask: (taskId: string) => Promise<{ success: boolean }>
       burnTaskSubtitles: (
         taskId: string,
@@ -193,6 +195,8 @@ const api = {
     ipcRenderer.invoke(IpcChannels.resumeTask, taskId),
   deleteTask: (taskId: string) =>
     ipcRenderer.invoke(IpcChannels.deleteTask, taskId),
+  deleteTasks: (taskIds: string[]) =>
+    ipcRenderer.invoke(IpcChannels.deleteTasks, taskIds),
   retryTask: (taskId: string) =>
     ipcRenderer.invoke(IpcChannels.retryTask, taskId),
   burnTaskSubtitles: (
