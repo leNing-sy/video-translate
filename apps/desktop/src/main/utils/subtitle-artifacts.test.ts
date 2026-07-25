@@ -8,6 +8,7 @@ import type { TranscriptionSegment } from '../../shared/types/video'
 import {
   generateBilingualAss,
   validateSubtitleArtifacts,
+  writeOriginalSubtitleArtifact,
   writeSubtitleArtifacts,
 } from './subtitle-artifacts'
 
@@ -251,5 +252,30 @@ test('候选组清理失败时中止生成并暴露文件系统错误', async ()
       'code' in error &&
       error.code === 'EACCES' &&
       error.message === 'permission denied'
+  )
+})
+
+test('仅原文产物递增编号且不生成译文文件', async () => {
+  testDirectory = await mkdtemp(
+    path.join(tmpdir(), 'subtitle-artifacts-original-only-')
+  )
+  const first = await writeOriginalSubtitleArtifact({
+    segments: sampleSegments,
+    outputDir: testDirectory,
+    baseName: 'demo',
+    sourceSuffix: 'en',
+  })
+  const second = await writeOriginalSubtitleArtifact({
+    segments: sampleSegments,
+    outputDir: testDirectory,
+    baseName: 'demo',
+    sourceSuffix: 'en',
+  })
+
+  assert.ok(first.original.endsWith('demo_en.srt'))
+  assert.ok(second.original.endsWith('demo_en.2.srt'))
+  assert.match(await readFile(first.original, 'utf8'), /Hello world/)
+  await assert.rejects(
+    readFile(path.join(testDirectory, 'demo_zh.srt'), 'utf8')
   )
 })

@@ -1,5 +1,5 @@
 /**
- * TaskRuntimeOptions 与 AppSettings 之间的规范化与映射。
+ * TaskRuntimeOptions 与任务创建设置之间的规范化与映射。
  */
 import {
   DEFAULT_ASR_ENGINE,
@@ -9,14 +9,15 @@ import {
 import {
   DEFAULT_ORIGINAL_SUBTITLE_COLOR,
   DEFAULT_TRANSLATED_SUBTITLE_COLOR,
-  normalizeAppSettings,
+  normalizeTaskCreationSettings,
   normalizeAsrEngine,
   normalizeHexColor,
   normalizeOllamaModel,
   normalizePolishOllamaModel,
-  type AppSettings,
   type PolishProvider,
   type SubtitleBurnMode,
+  type SubtitleProcessingMode,
+  type TaskCreationSettings,
 } from './settings'
 import type { TaskRuntimeOptions } from './types/video'
 
@@ -26,6 +27,7 @@ export function defaultTaskRuntimeOptions(): TaskRuntimeOptions {
     asrEngine: DEFAULT_ASR_ENGINE,
     burnSubtitles: false,
     burnSubtitleMode: 'bilingual',
+    subtitleProcessingMode: 'translate',
     polishTranscript: true,
     polishProvider: 'ollama',
     polishOllamaModel: '',
@@ -36,16 +38,17 @@ export function defaultTaskRuntimeOptions(): TaskRuntimeOptions {
   }
 }
 
-/** 从 AppSettings（或上传载荷）构建任务运行配置 */
+/** 从任务创建载荷构建任务运行配置 */
 export function taskOptionsFromAppSettings(
-  settings: Partial<AppSettings> | null | undefined
+  settings: Partial<TaskCreationSettings> | null | undefined
 ): TaskRuntimeOptions {
-  const app = normalizeAppSettings(settings)
+  const app = normalizeTaskCreationSettings(settings)
   return {
     ollamaModel: app.ollamaModel,
     asrEngine: app.asrEngine,
     burnSubtitles: app.burnSubtitles,
     burnSubtitleMode: app.burnSubtitleMode,
+    subtitleProcessingMode: app.subtitleProcessingMode,
     polishTranscript: app.polishTranscript,
     polishProvider: app.polishProvider,
     polishOllamaModel: app.polishOllamaModel,
@@ -75,6 +78,10 @@ export function normalizeTaskRuntimeOptions(
     raw.polishProvider === 'byok' || raw.polishProvider === 'ollama'
       ? raw.polishProvider
       : base.polishProvider
+  const subtitleProcessingMode: SubtitleProcessingMode =
+    raw.subtitleProcessingMode === 'extract' ? 'extract' : 'translate'
+  const resolvedBurnMode =
+    subtitleProcessingMode === 'extract' ? 'original' : resolvedBurn
 
   return {
     ollamaModel: normalizeOllamaModel(raw.ollamaModel ?? base.ollamaModel),
@@ -85,7 +92,8 @@ export function normalizeTaskRuntimeOptions(
       raw.burnSubtitles === undefined
         ? base.burnSubtitles
         : Boolean(raw.burnSubtitles),
-    burnSubtitleMode: resolvedBurn,
+    burnSubtitleMode: resolvedBurnMode,
+    subtitleProcessingMode,
     polishTranscript:
       raw.polishTranscript === undefined
         ? base.polishTranscript

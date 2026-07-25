@@ -2,7 +2,11 @@
 
 import type { AsrEngineId } from '../constants'
 import type { DetectedLanguage } from '../language'
-import type { PolishProvider, SubtitleBurnMode } from '../settings'
+import type {
+  PolishProvider,
+  SubtitleBurnMode,
+  SubtitleProcessingMode,
+} from '../settings'
 
 /** 任务工作流类型：字幕翻译 vs 文稿整理 */
 export type TaskKind = 'subtitle' | 'document'
@@ -44,6 +48,7 @@ export interface TaskRuntimeOptions {
   asrEngine: AsrEngineId
   burnSubtitles: boolean
   burnSubtitleMode: SubtitleBurnMode
+  subtitleProcessingMode: SubtitleProcessingMode
   polishTranscript: boolean
   polishProvider: PolishProvider
   polishOllamaModel: string

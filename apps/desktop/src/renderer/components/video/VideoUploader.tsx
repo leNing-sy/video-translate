@@ -4,7 +4,22 @@ import { useNavigate } from 'react-router-dom'
 import { Alert, AlertDescription } from 'renderer/components/ui/alert'
 import { Button } from 'renderer/components/ui/button'
 import { Card, CardContent } from 'renderer/components/ui/card'
-import { parseStoredAppSettings } from '../../../shared/settings'
+import { Label } from 'renderer/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from 'renderer/components/ui/select'
+import {
+  DEFAULT_TASK_SUBMISSION_OPTIONS,
+  normalizeTaskSubmissionOptions,
+  parseStoredAppSettings,
+  type SubtitleBurnMode,
+  type SubtitleProcessingMode,
+  type TaskSubmissionOptions,
+} from '../../../shared/settings'
 import type { TaskKind } from '../../../shared/types/video'
 
 interface VideoUploaderProps {
@@ -39,8 +54,7 @@ function extractUrls(text: string): string[] {
 }
 
 const VIDEO_EXT = /\.(mp4|avi|mov|mkv|webm|wmv|flv)$/i
-const MEDIA_EXT =
-  /\.(mp4|avi|mov|mkv|webm|wmv|flv|mp3|wav|m4a|aac|flac|ogg)$/i
+const MEDIA_EXT = /\.(mp4|avi|mov|mkv|webm|wmv|flv|mp3|wav|m4a|aac|flac|ogg)$/i
 
 /** 解析拖入 File 的本地路径（Electron 必须走 webUtils，File.path 已失效） */
 function resolveDroppedFilePath(file: File): string {
@@ -60,7 +74,9 @@ function resolveDroppedFilePath(file: File): string {
 }
 
 function isAcceptedMedia(pathOrName: string, kind: TaskKind): boolean {
-  return kind === 'document' ? MEDIA_EXT.test(pathOrName) : VIDEO_EXT.test(pathOrName)
+  return kind === 'document'
+    ? MEDIA_EXT.test(pathOrName)
+    : VIDEO_EXT.test(pathOrName)
 }
 
 export function VideoUploader({
@@ -75,6 +91,9 @@ export function VideoUploader({
   const [urlText, setUrlText] = useState('')
   const [urlSubmitting, setUrlSubmitting] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [taskOptions, setTaskOptions] = useState<TaskSubmissionOptions>({
+    ...DEFAULT_TASK_SUBMISSION_OPTIONS,
+  })
   /** 用计数避免子元素 dragenter/leave 抖动导致 drop 状态错乱 */
   const dragDepthRef = useRef(0)
 
@@ -83,7 +102,10 @@ export function VideoUploader({
       if (filePaths.length === 0) return
       setUploading(true)
       try {
-        const settings = loadSettings()
+        const settings = {
+          ...loadSettings(),
+          ...normalizeTaskSubmissionOptions(taskOptions),
+        }
         const result = await window.App.uploadFiles(filePaths, settings, kind)
         if (result.success) {
           setError(null)
@@ -98,7 +120,7 @@ export function VideoUploader({
         setUploading(false)
       }
     },
-    [onUploadSuccess, kind]
+    [onUploadSuccess, kind, taskOptions]
   )
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -225,7 +247,10 @@ export function VideoUploader({
 
     setUrlSubmitting(true)
     try {
-      const settings = loadSettings()
+      const settings = {
+        ...loadSettings(),
+        ...normalizeTaskSubmissionOptions(taskOptions),
+      }
       const result = await window.App.createTasksFromUrls(urls, settings, kind)
       if (result.success) {
         setUrlText('')
@@ -237,9 +262,7 @@ export function VideoUploader({
       }
     } catch (err) {
       setError(
-        `创建在线任务失败：${
-          err instanceof Error ? err.message : String(err)
-        }`
+        `创建在线任务失败：${err instanceof Error ? err.message : String(err)}`
       )
     } finally {
       setUrlSubmitting(false)
@@ -248,6 +271,127 @@ export function VideoUploader({
 
   return (
     <div className="flex flex-col gap-4">
+      {!isDocument && (
+        <Card className="gap-0 py-0">
+          <CardContent className="space-y-4 px-5 py-4">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-sm font-semibold">本次任务</h2>
+              <p className="text-xs text-muted-foreground">
+                这些选项只影响接下来添加的任务。
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>处理方式</Label>
+              <div
+                className="grid grid-cols-2 gap-2"
+                role="group"
+                aria-label="字幕处理方式"
+              >
+                {(
+                  [
+                    ['translate', '翻译字幕'],
+                    ['extract', '仅提取原文'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    variant={
+                      taskOptions.subtitleProcessingMode === value
+                        ? 'default'
+                        : 'outline'
+                    }
+                    aria-pressed={taskOptions.subtitleProcessingMode === value}
+                    onClick={() =>
+                      setTaskOptions(previous =>
+                        normalizeTaskSubmissionOptions({
+                          ...previous,
+                          subtitleProcessingMode:
+                            value as SubtitleProcessingMode,
+                        })
+                      )
+                    }
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {taskOptions.subtitleProcessingMode === 'extract'
+                  ? '跳过润色和翻译，只生成原文 SRT，无需 Ollama。'
+                  : '生成原文、译文和双语字幕，需要 Ollama。'}
+              </p>
+            </div>
+
+            <div className="space-y-3 border-t border-border pt-4">
+              <div className="flex items-center gap-2">
+                <input
+                  id="task-burn-subtitles"
+                  type="checkbox"
+                  checked={taskOptions.burnSubtitles}
+                  onChange={event =>
+                    setTaskOptions(previous =>
+                      normalizeTaskSubmissionOptions({
+                        ...previous,
+                        burnSubtitles: event.target.checked,
+                      })
+                    )
+                  }
+                  className="h-4 w-4 rounded border-input accent-brand"
+                />
+                <Label htmlFor="task-burn-subtitles">烧录硬字幕到视频</Label>
+              </div>
+
+              {taskOptions.burnSubtitles &&
+                taskOptions.subtitleProcessingMode === 'translate' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="task-burn-mode">烧录内容</Label>
+                    <Select
+                      value={taskOptions.burnSubtitleMode}
+                      onValueChange={value => {
+                        if (value == null) return
+                        setTaskOptions(previous =>
+                          normalizeTaskSubmissionOptions({
+                            ...previous,
+                            burnSubtitleMode: value as SubtitleBurnMode,
+                          })
+                        )
+                      }}
+                      items={{
+                        bilingual: '双语堆叠（原文上 / 译文下）',
+                        translated: '仅译文',
+                        original: '仅原文',
+                      }}
+                    >
+                      <SelectTrigger
+                        id="task-burn-mode"
+                        className="w-full min-w-0"
+                      >
+                        <SelectValue placeholder="选择烧录内容" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="bilingual">
+                          双语堆叠（原文上 / 译文下）
+                        </SelectItem>
+                        <SelectItem value="translated">仅译文</SelectItem>
+                        <SelectItem value="original">仅原文</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+              {taskOptions.burnSubtitles &&
+                taskOptions.subtitleProcessingMode === 'extract' && (
+                  <p className="text-xs text-muted-foreground">
+                    仅提取模式会烧录原文字幕。
+                  </p>
+                )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {error && (
         <Alert variant="destructive" className="motion-banner-in">
           <AlertCircle className="h-4 w-4" />
@@ -369,7 +513,9 @@ export function VideoUploader({
                 ? '提交中…'
                 : isDocument
                   ? '下载并整理'
-                  : '下载并翻译'}
+                  : taskOptions.subtitleProcessingMode === 'extract'
+                    ? '下载并提取'
+                    : '下载并翻译'}
             </Button>
           </div>
         </CardContent>

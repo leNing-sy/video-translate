@@ -6,6 +6,16 @@ import {
 
 export type SubtitleBurnMode = 'bilingual' | 'translated' | 'original'
 
+/** 字幕任务处理方式；默认保持现有翻译流程。 */
+export type SubtitleProcessingMode = 'translate' | 'extract'
+
+export interface TaskSubmissionOptions {
+  subtitleProcessingMode: SubtitleProcessingMode
+  burnSubtitles: boolean
+  /** 烧录内容：双语堆叠 / 仅译文 / 仅原文 */
+  burnSubtitleMode: SubtitleBurnMode
+}
+
 /** 识别文本润色后端：本地 Ollama 或用户自备 OpenAI 兼容 API */
 export type PolishProvider = 'ollama' | 'byok'
 
@@ -20,9 +30,6 @@ export interface AppSettings {
   sourceLanguage: string
   targetLanguage: string
   outputFormat: 'srt' | 'vtt' | 'txt'
-  burnSubtitles: boolean
-  /** 烧录内容：双语堆叠 / 仅译文 / 仅原文 */
-  burnSubtitleMode: SubtitleBurnMode
   /** 识别结果先经大模型润色再翻译 */
   polishTranscript: boolean
   /** 润色后端：本地 Ollama 或在线 BYOK */
@@ -39,14 +46,14 @@ export interface AppSettings {
   translatedSubtitleColor: string
 }
 
+export type TaskCreationSettings = AppSettings & TaskSubmissionOptions
+
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   asrEngine: DEFAULT_ASR_ENGINE,
   ollamaModel: DEFAULT_OLLAMA_MODEL,
   sourceLanguage: 'auto',
   targetLanguage: 'zh',
   outputFormat: 'srt',
-  burnSubtitles: false,
-  burnSubtitleMode: 'bilingual',
   polishTranscript: true,
   polishProvider: 'ollama',
   polishOllamaModel: '',
@@ -56,11 +63,23 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   translatedSubtitleColor: DEFAULT_TRANSLATED_SUBTITLE_COLOR,
 }
 
+export const DEFAULT_TASK_SUBMISSION_OPTIONS: TaskSubmissionOptions = {
+  subtitleProcessingMode: 'translate',
+  burnSubtitles: false,
+  burnSubtitleMode: 'bilingual',
+}
+
 function normalizeBurnSubtitleMode(value?: string | null): SubtitleBurnMode {
   if (value === 'translated' || value === 'original' || value === 'bilingual') {
     return value
   }
-  return DEFAULT_APP_SETTINGS.burnSubtitleMode
+  return DEFAULT_TASK_SUBMISSION_OPTIONS.burnSubtitleMode
+}
+
+function normalizeSubtitleProcessingMode(
+  value?: string | null
+): SubtitleProcessingMode {
+  return value === 'extract' ? 'extract' : 'translate'
 }
 
 function normalizePolishProvider(value?: string | null): PolishProvider {
@@ -143,8 +162,6 @@ export function normalizeAppSettings(
     sourceLanguage: raw.sourceLanguage || DEFAULT_APP_SETTINGS.sourceLanguage,
     targetLanguage: raw.targetLanguage || DEFAULT_APP_SETTINGS.targetLanguage,
     outputFormat: raw.outputFormat || DEFAULT_APP_SETTINGS.outputFormat,
-    burnSubtitles: Boolean(raw.burnSubtitles),
-    burnSubtitleMode: normalizeBurnSubtitleMode(raw.burnSubtitleMode),
     polishTranscript:
       raw.polishTranscript === undefined
         ? DEFAULT_APP_SETTINGS.polishTranscript
@@ -161,6 +178,31 @@ export function normalizeAppSettings(
       raw.translatedSubtitleColor,
       DEFAULT_TRANSLATED_SUBTITLE_COLOR
     ),
+  }
+}
+
+export function normalizeTaskSubmissionOptions(
+  raw?: Partial<TaskSubmissionOptions> | null
+): TaskSubmissionOptions {
+  const subtitleProcessingMode = normalizeSubtitleProcessingMode(
+    raw?.subtitleProcessingMode
+  )
+  return {
+    subtitleProcessingMode,
+    burnSubtitles: Boolean(raw?.burnSubtitles),
+    burnSubtitleMode:
+      subtitleProcessingMode === 'extract'
+        ? 'original'
+        : normalizeBurnSubtitleMode(raw?.burnSubtitleMode),
+  }
+}
+
+export function normalizeTaskCreationSettings(
+  raw?: Partial<TaskCreationSettings> | null
+): TaskCreationSettings {
+  return {
+    ...normalizeAppSettings(raw),
+    ...normalizeTaskSubmissionOptions(raw),
   }
 }
 

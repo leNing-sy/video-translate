@@ -5,7 +5,10 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import dayjs from 'dayjs'
-import { DEFAULT_ASR_ENGINE, DEFAULT_OLLAMA_MODEL } from '../../shared/constants'
+import {
+  DEFAULT_ASR_ENGINE,
+  DEFAULT_OLLAMA_MODEL,
+} from '../../shared/constants'
 import {
   normalizeDetectedLanguage,
   resolveSubtitleLanguageSuffixes,
@@ -36,6 +39,7 @@ import {
   selectBurnSubtitleContent,
   type SubtitleColors,
   validateSubtitleArtifacts,
+  writeOriginalSubtitleArtifact,
   writeSubtitleArtifacts,
 } from '../utils/subtitle-artifacts'
 import { SubtitleGenerator } from '../utils/subtitle-generator'
@@ -67,9 +71,7 @@ export interface PipelineHooks {
   ) => Promise<void>
   onArtifacts: (artifacts: TaskOutputArtifacts) => void
   onSegments: (segments: TranscriptionSegment[]) => void
-  onDetectedLanguage: (
-    language: TranslationTask['detectedLanguage']
-  ) => void
+  onDetectedLanguage: (language: TranslationTask['detectedLanguage']) => void
   resolveByokApiKey: () => string | undefined
 }
 
@@ -118,8 +120,10 @@ export async function runTranslationPipeline(
       platformSegments && platformSegments.length > 0
     )
 
+    const originalOnly = options.subtitleProcessingMode === 'extract'
     await ensurePipelineDependencies(task.id, hooks, signal, {
       requireAsr: !usePlatformSubtitles,
+      requireOllama: !originalOnly,
     })
 
     const videoInfo = await ffmpegProcessor.getVideoInfo(task.videoFile.path)
@@ -187,24 +191,29 @@ export async function runTranslationPipeline(
       `${usePlatformSubtitles ? '平台字幕' : '识别'} ${context.transcription.segments.length} 段 → 显示 ${context.displaySegments.length} 段`
     )
 
-    context.displaySegments = await polishStage(
-      task,
-      context.displaySegments,
-      options,
-      hooks,
-      signal
-    )
+    if (originalOnly) {
+      hooks.onLog('info', '已选择仅提取原文字幕，跳过润色与翻译')
+      context.translatedSegments = context.displaySegments
+    } else {
+      context.displaySegments = await polishStage(
+        task,
+        context.displaySegments,
+        options,
+        hooks,
+        signal
+      )
 
-    const ollamaModel = normalizeOllamaModel(
-      options.ollamaModel ?? DEFAULT_OLLAMA_MODEL
-    )
-    context.translatedSegments = await translateStage(
-      task,
-      context.displaySegments,
-      ollamaModel,
-      hooks,
-      signal
-    )
+      const ollamaModel = normalizeOllamaModel(
+        options.ollamaModel ?? DEFAULT_OLLAMA_MODEL
+      )
+      context.translatedSegments = await translateStage(
+        task,
+        context.displaySegments,
+        ollamaModel,
+        hooks,
+        signal
+      )
+    }
 
     context.subtitles = SubtitleGenerator.segmentsToSubtitles(
       context.translatedSegments.map(segment => ({
@@ -220,11 +229,12 @@ export async function runTranslationPipeline(
       context.videoSize,
       options,
       hooks,
-      signal
+      signal,
+      originalOnly
     )
 
     if (options.burnSubtitles) {
-      const burnMode = options.burnSubtitleMode ?? 'bilingual'
+      const burnMode = originalOnly ? 'original' : options.burnSubtitleMode
       const burnPath = await prepareBurnSubtitleFile(
         task.id,
         context.translatedSegments,
@@ -258,7 +268,7 @@ async function ensurePipelineDependencies(
   taskId: string,
   hooks: PipelineHooks,
   signal?: AbortSignal,
-  opts?: { requireAsr?: boolean }
+  opts?: { requireAsr?: boolean; requireOllama?: boolean }
 ): Promise<void> {
   throwIfAborted(signal)
   hooks.onLog('info', '检查 FFmpeg 可用性...')
@@ -290,11 +300,15 @@ async function ensurePipelineDependencies(
     hooks.onLog('info', '已有平台字幕，跳过 ASR 依赖检查')
   }
 
-  hooks.onLog('info', '检查 Ollama 服务状态...')
-  if (!(await ollamaClient.isAvailable())) {
-    throw new Error('Ollama 服务不可用，请先启动 Ollama')
+  if (opts?.requireOllama !== false) {
+    hooks.onLog('info', '检查 Ollama 服务状态...')
+    if (!(await ollamaClient.isAvailable())) {
+      throw new Error('Ollama 服务不可用，请先启动 Ollama')
+    }
+    hooks.onLog('success', 'Ollama 可用性检查通过')
+  } else {
+    hooks.onLog('info', '仅提取原文字幕，不需要 Ollama')
   }
-  hooks.onLog('success', 'Ollama 可用性检查通过')
   void taskId
 }
 
@@ -312,11 +326,7 @@ async function tryLoadPlatformSubtitleSegments(
   try {
     await fs.access(subtitlePath)
   } catch {
-    hooks.onLog(
-      'warn',
-      '平台字幕文件不存在，将回退到 ASR',
-      subtitlePath
-    )
+    hooks.onLog('warn', '平台字幕文件不存在，将回退到 ASR', subtitlePath)
     return null
   }
 
@@ -514,8 +524,7 @@ async function translateStage(
 
   const merged = segments.map((segment, index) => ({
     ...segment,
-    translatedText:
-      translated[index] ?? getDisplaySource(segment),
+    translatedText: translated[index] ?? getDisplaySource(segment),
   }))
 
   const taskSegments: TranscriptionSegment[] = merged.map(segment => ({
@@ -540,13 +549,16 @@ async function generateSubtitleStage(
   videoSize: { width: number; height: number } | undefined,
   options: TaskRuntimeOptions,
   hooks: PipelineHooks,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  originalOnly = false
 ): Promise<TaskOutputArtifacts> {
   throwIfAborted(signal)
   await hooks.onStatus(TaskStatus.GENERATING_SUBTITLES, 90)
   hooks.onLog(
     'info',
-    '开始生成字幕文件（原文/译文/双语 SRT + ASS）...'
+    originalOnly
+      ? '开始生成原文 SRT...'
+      : '开始生成字幕文件（原文/译文/双语 SRT + ASS）...'
   )
 
   const outputDir = path.join(path.dirname(task.videoFile.path), 'output')
@@ -560,6 +572,23 @@ async function generateSubtitleStage(
     task.detectedLanguage ?? task.sourceLanguage,
     task.targetLanguage
   )
+
+  if (originalOnly) {
+    const result = await writeOriginalSubtitleArtifact({
+      segments,
+      outputDir,
+      baseName: artifactBase,
+      sourceSuffix: suffixes.sourceSuffix,
+      videoSize,
+    })
+    const artifacts: TaskOutputArtifacts = {
+      originalSubtitle: result.original,
+      outputDirectory: result.outputDirectory,
+    }
+    hooks.onArtifacts(artifacts)
+    hooks.onLog('success', '原文字幕文件生成完成', result.original)
+    return artifacts
+  }
 
   const paths = await writeSubtitleArtifacts({
     segments,
@@ -622,11 +651,7 @@ export async function prepareBurnSubtitleFile(
   const selected = selectBurnSubtitleContent(mode, segments, videoSize, colors)
   const burnPath = path.join(dir, `burn_${mode}.${selected.extension}`)
   await fs.writeFile(burnPath, selected.content, 'utf-8')
-  hooks?.onLog(
-    'info',
-    '已准备烧录字幕',
-    `模式: ${mode}, 文件: ${burnPath}`
-  )
+  hooks?.onLog('info', '已准备烧录字幕', `模式: ${mode}, 文件: ${burnPath}`)
   return burnPath
 }
 

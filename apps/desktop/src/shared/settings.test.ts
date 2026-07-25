@@ -3,6 +3,7 @@ import { test } from 'vitest'
 import {
   DEFAULT_APP_SETTINGS,
   normalizeAppSettings,
+  normalizeTaskSubmissionOptions,
   parseStoredAppSettings,
 } from './settings'
 
@@ -52,4 +53,30 @@ test('parseStoredAppSettings 拒绝非对象 JSON 并规范化合法设置', () 
   assert.equal(result.recovered, false)
   assert.equal(result.settings.sourceLanguage, 'ja')
   assert.equal(result.settings.polishProvider, 'ollama')
+})
+
+test('全局设置忽略单次任务的处理方式和烧录选项', () => {
+  const settings = normalizeAppSettings({
+    subtitleProcessingMode: 'extract',
+    burnSubtitles: true,
+    burnSubtitleMode: 'original',
+  } as never)
+
+  assert.equal('subtitleProcessingMode' in settings, false)
+  assert.equal('burnSubtitles' in settings, false)
+  assert.equal('burnSubtitleMode' in settings, false)
+})
+
+test('仅提取原文任务启用烧录时固定烧录原文', () => {
+  const options = normalizeTaskSubmissionOptions({
+    subtitleProcessingMode: 'extract',
+    burnSubtitles: true,
+    burnSubtitleMode: 'translated',
+  })
+
+  assert.deepEqual(options, {
+    subtitleProcessingMode: 'extract',
+    burnSubtitles: true,
+    burnSubtitleMode: 'original',
+  })
 })
