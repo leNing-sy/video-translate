@@ -39,6 +39,23 @@ test('normalizeAppSettings 忽略非法 polishProvider', () => {
   assert.equal(settings.polishProvider, 'ollama')
 })
 
+test('normalizeAppSettings 规范化字幕输出位置', () => {
+  assert.equal(
+    normalizeAppSettings({}).subtitleOutputLocation,
+    'output-subdirectory'
+  )
+  assert.equal(
+    normalizeAppSettings({ subtitleOutputLocation: 'source-directory' })
+      .subtitleOutputLocation,
+    'source-directory'
+  )
+  assert.equal(
+    normalizeAppSettings({ subtitleOutputLocation: 'invalid' as never })
+      .subtitleOutputLocation,
+    'output-subdirectory'
+  )
+})
+
 test('parseStoredAppSettings 从损坏 JSON 恢复默认设置', () => {
   const result = parseStoredAppSettings('{broken')
   assert.equal(result.recovered, true)

@@ -16,6 +16,7 @@ import {
   normalizePolishOllamaModel,
   type PolishProvider,
   type SubtitleBurnMode,
+  type SubtitleOutputLocation,
   type SubtitleProcessingMode,
   type TaskCreationSettings,
 } from './settings'
@@ -28,6 +29,7 @@ export function defaultTaskRuntimeOptions(): TaskRuntimeOptions {
     burnSubtitles: false,
     burnSubtitleMode: 'bilingual',
     subtitleProcessingMode: 'translate',
+    subtitleOutputLocation: 'output-subdirectory',
     polishTranscript: true,
     polishProvider: 'ollama',
     polishOllamaModel: '',
@@ -49,6 +51,7 @@ export function taskOptionsFromAppSettings(
     burnSubtitles: app.burnSubtitles,
     burnSubtitleMode: app.burnSubtitleMode,
     subtitleProcessingMode: app.subtitleProcessingMode,
+    subtitleOutputLocation: app.subtitleOutputLocation,
     polishTranscript: app.polishTranscript,
     polishProvider: app.polishProvider,
     polishOllamaModel: app.polishOllamaModel,
@@ -80,6 +83,10 @@ export function normalizeTaskRuntimeOptions(
       : base.polishProvider
   const subtitleProcessingMode: SubtitleProcessingMode =
     raw.subtitleProcessingMode === 'extract' ? 'extract' : 'translate'
+  const subtitleOutputLocation: SubtitleOutputLocation =
+    raw.subtitleOutputLocation === 'source-directory'
+      ? 'source-directory'
+      : 'output-subdirectory'
   const resolvedBurnMode =
     subtitleProcessingMode === 'extract' ? 'original' : resolvedBurn
 
@@ -94,6 +101,7 @@ export function normalizeTaskRuntimeOptions(
         : Boolean(raw.burnSubtitles),
     burnSubtitleMode: resolvedBurnMode,
     subtitleProcessingMode,
+    subtitleOutputLocation,
     polishTranscript:
       raw.polishTranscript === undefined
         ? base.polishTranscript

@@ -5,6 +5,7 @@ import type { DetectedLanguage } from '../language'
 import type {
   PolishProvider,
   SubtitleBurnMode,
+  SubtitleOutputLocation,
   SubtitleProcessingMode,
 } from '../settings'
 
@@ -49,6 +50,7 @@ export interface TaskRuntimeOptions {
   burnSubtitles: boolean
   burnSubtitleMode: SubtitleBurnMode
   subtitleProcessingMode: SubtitleProcessingMode
+  subtitleOutputLocation: SubtitleOutputLocation
   polishTranscript: boolean
   polishProvider: PolishProvider
   polishOllamaModel: string

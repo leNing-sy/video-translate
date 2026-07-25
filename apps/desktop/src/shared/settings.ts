@@ -9,6 +9,11 @@ export type SubtitleBurnMode = 'bilingual' | 'translated' | 'original'
 /** 字幕任务处理方式；默认保持现有翻译流程。 */
 export type SubtitleProcessingMode = 'translate' | 'extract'
 
+/** 字幕与烧录视频的输出位置。 */
+export type SubtitleOutputLocation =
+  | 'output-subdirectory'
+  | 'source-directory'
+
 export interface TaskSubmissionOptions {
   subtitleProcessingMode: SubtitleProcessingMode
   burnSubtitles: boolean
@@ -30,6 +35,7 @@ export interface AppSettings {
   sourceLanguage: string
   targetLanguage: string
   outputFormat: 'srt' | 'vtt' | 'txt'
+  subtitleOutputLocation: SubtitleOutputLocation
   /** 识别结果先经大模型润色再翻译 */
   polishTranscript: boolean
   /** 润色后端：本地 Ollama 或在线 BYOK */
@@ -54,6 +60,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   sourceLanguage: 'auto',
   targetLanguage: 'zh',
   outputFormat: 'srt',
+  subtitleOutputLocation: 'output-subdirectory',
   polishTranscript: true,
   polishProvider: 'ollama',
   polishOllamaModel: '',
@@ -80,6 +87,14 @@ function normalizeSubtitleProcessingMode(
   value?: string | null
 ): SubtitleProcessingMode {
   return value === 'extract' ? 'extract' : 'translate'
+}
+
+function normalizeSubtitleOutputLocation(
+  value?: string | null
+): SubtitleOutputLocation {
+  return value === 'source-directory'
+    ? 'source-directory'
+    : 'output-subdirectory'
 }
 
 function normalizePolishProvider(value?: string | null): PolishProvider {
@@ -162,6 +177,9 @@ export function normalizeAppSettings(
     sourceLanguage: raw.sourceLanguage || DEFAULT_APP_SETTINGS.sourceLanguage,
     targetLanguage: raw.targetLanguage || DEFAULT_APP_SETTINGS.targetLanguage,
     outputFormat: raw.outputFormat || DEFAULT_APP_SETTINGS.outputFormat,
+    subtitleOutputLocation: normalizeSubtitleOutputLocation(
+      raw.subtitleOutputLocation
+    ),
     polishTranscript:
       raw.polishTranscript === undefined
         ? DEFAULT_APP_SETTINGS.polishTranscript

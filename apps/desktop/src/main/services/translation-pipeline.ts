@@ -43,6 +43,7 @@ import {
   writeSubtitleArtifacts,
 } from '../utils/subtitle-artifacts'
 import { SubtitleGenerator } from '../utils/subtitle-generator'
+import { resolveSubtitleOutputDirectory } from '../utils/subtitle-output-directory'
 import { ensureSenseVoiceModel } from './asr/model-downloader'
 import {
   type AsrTranscriptionResult,
@@ -561,7 +562,10 @@ async function generateSubtitleStage(
       : '开始生成字幕文件（原文/译文/双语 SRT + ASS）...'
   )
 
-  const outputDir = path.join(path.dirname(task.videoFile.path), 'output')
+  const outputDir = resolveSubtitleOutputDirectory(
+    task.videoFile.path,
+    options.subtitleOutputLocation
+  )
   const baseName = path.basename(
     task.videoFile.path,
     path.extname(task.videoFile.path)
@@ -669,7 +673,13 @@ export async function burnHardSubtitlesStage(
 ): Promise<string> {
   throwIfAborted(signal)
   const videoPath = task.videoFile.path
-  const outputDir = path.join(path.dirname(videoPath), 'output')
+  // 旧任务可能尚无 outputArtifacts，按任务创建时保存的位置规则解析。
+  const outputDir =
+    task.outputArtifacts?.outputDirectory ??
+    resolveSubtitleOutputDirectory(
+      videoPath,
+      task.options?.subtitleOutputLocation
+    )
   await fs.mkdir(outputDir, { recursive: true })
 
   const baseName = path.basename(videoPath, path.extname(videoPath))

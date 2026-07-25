@@ -11,6 +11,7 @@ test('taskOptionsFromAppSettings 从 AppSettings 映射运行配置', () => {
     sourceLanguage: 'en',
     targetLanguage: 'zh',
     subtitleProcessingMode: 'extract',
+    subtitleOutputLocation: 'source-directory',
     burnSubtitles: true,
     polishProvider: 'byok',
     byokBaseUrl: 'https://api.example.com',
@@ -19,6 +20,7 @@ test('taskOptionsFromAppSettings 从 AppSettings 映射运行配置', () => {
   assert.equal(options.burnSubtitles, true)
   assert.equal(options.subtitleProcessingMode, 'extract')
   assert.equal(options.burnSubtitleMode, 'original')
+  assert.equal(options.subtitleOutputLocation, 'source-directory')
   assert.equal(options.polishProvider, 'byok')
   assert.equal(options.byokBaseUrl, 'https://api.example.com')
   assert.equal(options.byokModelId, 'gpt-4o-mini')
@@ -44,5 +46,17 @@ test('normalizeTaskRuntimeOptions 对旧任务保持翻译模式', () => {
     normalizeTaskRuntimeOptions({ subtitleProcessingMode: 'extract' })
       .subtitleProcessingMode,
     'extract'
+  )
+})
+
+test('normalizeTaskRuntimeOptions 对旧任务保持 output 子目录', () => {
+  assert.equal(
+    normalizeTaskRuntimeOptions({}).subtitleOutputLocation,
+    'output-subdirectory'
+  )
+  assert.equal(
+    normalizeTaskRuntimeOptions({ subtitleOutputLocation: 'source-directory' })
+      .subtitleOutputLocation,
+    'source-directory'
   )
 })
