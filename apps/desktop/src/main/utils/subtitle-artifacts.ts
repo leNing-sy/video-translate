@@ -12,10 +12,7 @@ import type {
   TranscriptionSegment,
 } from '../../shared/types/video'
 import type { DisplaySegment } from './display-segment-builder'
-import {
-  getAsrSourceForArtifacts,
-  getTranslatedText,
-} from './segment-text'
+import { getAsrSourceForArtifacts, getTranslatedText } from './segment-text'
 import { SubtitleGenerator } from './subtitle-generator'
 import {
   computeSubtitleLayout,
@@ -261,7 +258,13 @@ export function selectBurnSubtitleContent(
   if (mode === 'original') {
     return {
       extension: 'ass',
-      content: generateMonolingualAss(segments, 'original', size, 'Sans', colors),
+      content: generateMonolingualAss(
+        segments,
+        'original',
+        size,
+        'Sans',
+        colors
+      ),
     }
   }
   return {
@@ -273,6 +276,134 @@ export function selectBurnSubtitleContent(
       'Sans',
       colors
     ),
+  }
+}
+
+function buildArtifactPaths(
+  outputDir: string,
+  baseName: string,
+  sourceSuffix: string,
+  targetSuffix: string,
+  sequence: number
+): SubtitleArtifactPaths {
+  const version = sequence === 1 ? '' : `.${sequence}`
+  return {
+    original: path.join(outputDir, `${baseName}_${sourceSuffix}${version}.srt`),
+    translated: path.join(
+      outputDir,
+      `${baseName}_${targetSuffix}${version}.srt`
+    ),
+    bilingual: path.join(outputDir, `${baseName}_bilingual${version}.srt`),
+    bilingualAss: path.join(outputDir, `${baseName}_bilingual${version}.ass`),
+    outputDirectory: outputDir,
+  }
+}
+
+async function removeReservedFiles(paths: string[]): Promise<void> {
+  const results = await Promise.allSettled(
+    paths.map(filePath => fs.unlink(filePath))
+  )
+  const failure = results.find(
+    result =>
+      result.status === 'rejected' &&
+      (!result.reason ||
+        typeof result.reason !== 'object' ||
+        !('code' in result.reason) ||
+        result.reason.code !== 'ENOENT')
+  )
+  if (failure?.status === 'rejected') {
+    throw failure.reason
+  }
+}
+
+/** 排他预占整组产物，冲突时整组递增编号。 */
+async function reserveArtifactPaths(
+  outputDir: string,
+  baseName: string,
+  sourceSuffix: string,
+  targetSuffix: string
+): Promise<SubtitleArtifactPaths> {
+  for (let sequence = 1; ; sequence += 1) {
+    const paths = buildArtifactPaths(
+      outputDir,
+      baseName,
+      sourceSuffix,
+      targetSuffix,
+      sequence
+    )
+    const files = [
+      paths.original,
+      paths.translated,
+      paths.bilingual,
+      paths.bilingualAss,
+    ]
+    if (new Set(files).size !== files.length) {
+      throw new Error('字幕原文与译文文件名冲突，请使用不同语言后缀')
+    }
+
+    const reserved: string[] = []
+    try {
+      for (const filePath of files) {
+        const handle = await fs.open(filePath, 'wx')
+        await handle.close()
+        reserved.push(filePath)
+      }
+      return paths
+    } catch (error) {
+      await removeReservedFiles(reserved)
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'EEXIST'
+      ) {
+        continue
+      }
+      throw error
+    }
+  }
+}
+
+/** 仅生成原文 SRT；同名时递增编号，避免覆盖已有文件。 */
+export async function writeOriginalSubtitleArtifact(options: {
+  segments: Array<DisplaySegment | TranscriptionSegment>
+  outputDir: string
+  baseName: string
+  sourceSuffix: string
+  videoSize?: Partial<VideoDisplaySize> | null
+}): Promise<{ original: string; outputDirectory: string }> {
+  const { segments, outputDir, baseName, sourceSuffix, videoSize } = options
+  await fs.mkdir(outputDir, { recursive: true })
+
+  for (let sequence = 1; ; sequence += 1) {
+    const version = sequence === 1 ? '' : `.${sequence}`
+    const original = path.join(
+      outputDir,
+      `${baseName}_${sourceSuffix}${version}.srt`
+    )
+    let reserved = false
+    try {
+      const handle = await fs.open(original, 'wx')
+      reserved = true
+      await handle.close()
+      const subtitles = segmentsToOriginalSubtitles(segments, videoSize)
+      await SubtitleGenerator.saveSubtitle(subtitles, original, 'srt')
+      return { original, outputDirectory: outputDir }
+    } catch (error) {
+      if (
+        !reserved &&
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'EEXIST'
+      ) {
+        continue
+      }
+      if (reserved) {
+        await removeReservedFiles([original])
+      }
+      throw error
+    }
   }
 }
 
@@ -297,27 +428,32 @@ export async function writeSubtitleArtifacts(options: {
 
   await fs.mkdir(outputDir, { recursive: true })
 
-  const originalPath = path.join(outputDir, `${baseName}_${sourceSuffix}.srt`)
-  const translatedPath = path.join(outputDir, `${baseName}_${targetSuffix}.srt`)
-  const bilingualPath = path.join(outputDir, `${baseName}_bilingual.srt`)
-  const bilingualAssPath = path.join(outputDir, `${baseName}_bilingual.ass`)
+  const paths = await reserveArtifactPaths(
+    outputDir,
+    baseName,
+    sourceSuffix,
+    targetSuffix
+  )
 
   const original = segmentsToOriginalSubtitles(segments, videoSize)
   const translated = segmentsToTranslatedSubtitles(segments, videoSize)
   const bilingual = segmentsToBilingualSubtitles(segments, videoSize)
   const ass = generateBilingualAss(segments, videoSize, 'Sans', colors)
 
-  await SubtitleGenerator.saveSubtitle(original, originalPath, 'srt')
-  await SubtitleGenerator.saveSubtitle(translated, translatedPath, 'srt')
-  await SubtitleGenerator.saveSubtitle(bilingual, bilingualPath, 'srt')
-  await fs.writeFile(bilingualAssPath, ass, 'utf-8')
-
-  return {
-    original: originalPath,
-    translated: translatedPath,
-    bilingual: bilingualPath,
-    bilingualAss: bilingualAssPath,
-    outputDirectory: outputDir,
+  try {
+    await SubtitleGenerator.saveSubtitle(original, paths.original, 'srt')
+    await SubtitleGenerator.saveSubtitle(translated, paths.translated, 'srt')
+    await SubtitleGenerator.saveSubtitle(bilingual, paths.bilingual, 'srt')
+    await fs.writeFile(paths.bilingualAss, ass, 'utf-8')
+    return paths
+  } catch (error) {
+    await removeReservedFiles([
+      paths.original,
+      paths.translated,
+      paths.bilingual,
+      paths.bilingualAss,
+    ])
+    throw error
   }
 }
 

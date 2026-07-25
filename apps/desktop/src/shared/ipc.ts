@@ -3,7 +3,11 @@
  * channel 名与载荷形状只在此处定义一次。
  */
 import type { AsrEngineId } from './constants'
-import type { AppSettings, SubtitleBurnMode } from './settings'
+import type {
+  AppSettings,
+  SubtitleBurnMode,
+  TaskCreationSettings,
+} from './settings'
 import type {
   OllamaModel,
   TaskKind,
@@ -27,6 +31,7 @@ export const IpcChannels = {
   pauseTask: 'pause-task',
   resumeTask: 'resume-task',
   deleteTask: 'delete-task',
+  deleteTasks: 'delete-tasks',
   retryTask: 'retry-task',
   burnTaskSubtitles: 'burn-task-subtitles',
   getTaskLogs: 'get-task-logs',
@@ -64,8 +69,8 @@ export const IpcChannels = {
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]
 
-/** 上传任务时使用完整 AppSettings（normalize 后） */
-export type UploadFilesSettings = AppSettings
+/** 上传任务时使用规范化后的全局设置与单次任务选项。 */
+export type UploadFilesSettings = TaskCreationSettings
 
 export type ArtifactKind = 'video' | 'subtitle' | 'result' | 'markdown'
 
@@ -89,6 +94,16 @@ export interface FailureResult {
 }
 
 export type SimpleResult = SuccessResult | FailureResult
+
+export interface DeleteTasksResult {
+  success: boolean
+  deletedTaskIds: string[]
+  rejected: Array<{
+    taskId: string
+    reason: string
+  }>
+  error?: string
+}
 
 export interface UploadFilesResult {
   success: boolean
@@ -153,5 +168,5 @@ export interface OpenPathResult {
   error?: string
 }
 
-export type { AppSettings, AsrEngineId, SubtitleBurnMode }
+export type { AppSettings, AsrEngineId, SubtitleBurnMode, TaskCreationSettings }
 export type { TaskLog, TaskOutputArtifacts, TranslationTask }

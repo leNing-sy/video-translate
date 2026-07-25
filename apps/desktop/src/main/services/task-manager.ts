@@ -8,12 +8,16 @@ import dayjs from 'dayjs'
 import { app, type BrowserWindow } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
 import { IpcChannels } from '../../shared/ipc'
-import type { AppSettings, SubtitleBurnMode } from '../../shared/settings'
+import type {
+  SubtitleBurnMode,
+  TaskCreationSettings,
+} from '../../shared/settings'
 import {
   normalizeTaskRuntimeOptions,
   taskOptionsFromAppSettings,
 } from '../../shared/task-options'
 import {
+  isBulkDeletableTaskStatus,
   normalizeTaskKind,
   type TaskKind,
   type TaskLog,
@@ -24,6 +28,10 @@ import {
   type TranslationTask,
   type VideoFile,
 } from '../../shared/types/video'
+import {
+  isProtectedDownloadCacheEntry,
+  resolveDownloadCacheProtection,
+} from '../utils/download-cache-protection'
 import type { SubtitleColors } from '../utils/subtitle-artifacts'
 import { ensureSenseVoiceModel } from './asr/model-downloader'
 import { databaseManager } from './database/manager'
@@ -48,7 +56,7 @@ import {
   runTranslationPipeline,
 } from './translation-pipeline'
 
-export interface CreateTaskOptions extends Partial<AppSettings> {
+export interface CreateTaskOptions extends Partial<TaskCreationSettings> {
   filePath: string
   sourceLanguage: string
   targetLanguage: string
@@ -56,7 +64,7 @@ export interface CreateTaskOptions extends Partial<AppSettings> {
   kind?: TaskKind
 }
 
-export interface CreateUrlTaskOptions extends Partial<AppSettings> {
+export interface CreateUrlTaskOptions extends Partial<TaskCreationSettings> {
   url: string
   sourceLanguage: string
   targetLanguage: string
@@ -392,11 +400,8 @@ export class TaskManager {
       await this.ensureLocalVideoReady(task, controller.signal)
 
       const hooks = {
-        onLog: (
-          level: TaskLog['level'],
-          message: string,
-          details?: string
-        ) => this.addTaskLog(taskId, level, message, details),
+        onLog: (level: TaskLog['level'], message: string, details?: string) =>
+          this.addTaskLog(taskId, level, message, details),
         onStatus: (
           status: TaskStatus,
           progress?: number,
@@ -412,6 +417,14 @@ export class TaskManager {
         onSegments: (segments: TranscriptionSegment[]) => {
           const taskRef = this.activeTasks.get(taskId)
           if (taskRef) taskRef.segments = segments
+        },
+        onDetectedLanguage: (language: TranslationTask['detectedLanguage']) => {
+          const taskRef = this.activeTasks.get(taskId)
+          if (taskRef) {
+            taskRef.detectedLanguage = language
+            this.notifyTaskUpdate(taskRef)
+          }
+          databaseManager.saveDetectedLanguage(taskId, language)
         },
         resolveByokApiKey: () => getByokApiKey() ?? undefined,
       }
@@ -569,7 +582,9 @@ export class TaskManager {
         'success',
         '已获取平台字幕，将跳过语音识别',
         `${result.platformSubtitle.language}` +
-          (result.platformSubtitle.likelyAuto ? '（自动字幕）' : '（人工字幕）') +
+          (result.platformSubtitle.likelyAuto
+            ? '（自动字幕）'
+            : '（人工字幕）') +
           ` · ${path.basename(result.platformSubtitle.path)}`
       )
     } else {
@@ -626,7 +641,11 @@ export class TaskManager {
 
     task.platformSubtitlePath = selected.path
     task.platformSubtitleLanguage = selected.language
-    databaseManager.savePlatformSubtitle(task.id, selected.path, selected.language)
+    databaseManager.savePlatformSubtitle(
+      task.id,
+      selected.path,
+      selected.language
+    )
     this.activeTasks.set(task.id, task)
     this.notifyTaskUpdate(task)
     this.addTaskLog(
@@ -731,8 +750,7 @@ export class TaskManager {
 
   getTask(taskId: string): TranslationTask | null {
     const task =
-      this.activeTasks.get(taskId) ??
-      databaseManager.getTranslationTask(taskId)
+      this.activeTasks.get(taskId) ?? databaseManager.getTranslationTask(taskId)
     if (!task) return null
     return { ...task, kind: normalizeTaskKind(task.kind) }
   }
@@ -740,7 +758,12 @@ export class TaskManager {
   /** 读取文稿任务润色后的 Markdown 文本 */
   async getTaskMarkdownContent(
     taskId: string
-  ): Promise<{ success: boolean; content?: string; path?: string; error?: string }> {
+  ): Promise<{
+    success: boolean
+    content?: string
+    path?: string
+    error?: string
+  }> {
     const task = this.getTask(taskId)
     if (!task) {
       return { success: false, error: '任务不存在' }
@@ -819,6 +842,46 @@ export class TaskManager {
     }
   }
 
+  async deleteTasks(taskIds: string[]): Promise<{
+    deletedTaskIds: string[]
+    rejected: Array<{ taskId: string; reason: string }>
+  }> {
+    const uniqueTaskIds = [...new Set(taskIds.filter(Boolean))]
+    const deletedTaskIds: string[] = []
+    const rejected: Array<{ taskId: string; reason: string }> = []
+
+    for (const taskId of uniqueTaskIds) {
+      const task =
+        this.activeTasks.get(taskId) ??
+        databaseManager.getTranslationTask(taskId)
+      if (!task) {
+        rejected.push({ taskId, reason: '任务不存在' })
+        continue
+      }
+      if (!isBulkDeletableTaskStatus(task.status)) {
+        rejected.push({ taskId, reason: '任务尚未结束，不能批量删除' })
+        continue
+      }
+
+      this.abortControllers.delete(taskId)
+      this.activeTasks.delete(taskId)
+      this.tempLogs.delete(taskId)
+      databaseManager.deleteTranslationTask(taskId)
+      await tempWorkspace.removeTaskDir(taskId).catch(error => {
+        console.warn(`清理任务临时缓存失败 (${taskId}):`, error)
+      })
+      await removeDownloadCachePreservingOutputs(task).catch(error => {
+        console.warn(`清理任务下载缓存失败 (${taskId}):`, error)
+      })
+      deletedTaskIds.push(taskId)
+
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send(IpcChannels.taskDeleted, taskId)
+      }
+    }
+
+    return { deletedTaskIds, rejected }
+  }
   retryTask(taskId: string): void {
     const task =
       this.activeTasks.get(taskId) ?? databaseManager.getTranslationTask(taskId)
@@ -878,8 +941,7 @@ export class TaskManager {
       return { success: false, error: '该任务正在烧录中' }
     }
 
-    const task =
-      existing ?? databaseManager.getTranslationTask(taskId)
+    const task = existing ?? databaseManager.getTranslationTask(taskId)
     if (!task) {
       return { success: false, error: '任务不存在' }
     }
@@ -912,18 +974,19 @@ export class TaskManager {
     this.abortControllers.set(taskId, controller)
 
     const hooks = {
-      onLog: (
-        level: TaskLog['level'],
-        message: string,
-        details?: string
-      ) => this.addTaskLog(taskId, level, message, details),
-      onStatus: (status: TaskStatus, progress?: number, errorMessage?: string) =>
-        this.updateTaskStatus(taskId, status, progress, errorMessage),
+      onLog: (level: TaskLog['level'], message: string, details?: string) =>
+        this.addTaskLog(taskId, level, message, details),
+      onStatus: (
+        status: TaskStatus,
+        progress?: number,
+        errorMessage?: string
+      ) => this.updateTaskStatus(taskId, status, progress, errorMessage),
       onArtifacts: (artifacts: TaskOutputArtifacts) => {
         task.outputArtifacts = artifacts
         databaseManager.saveTaskArtifacts(taskId, artifacts)
       },
       onSegments: (_segments: TranscriptionSegment[]) => {},
+      onDetectedLanguage: () => {},
       resolveByokApiKey: () => getByokApiKey() ?? undefined,
     }
 
@@ -1012,6 +1075,40 @@ export class TaskManager {
   }
 }
 
+async function removeDownloadCachePreservingOutputs(
+  task: TranslationTask
+): Promise<void> {
+  const taskRoot = path.resolve(getDownloadsRoot(), task.id)
+  const downloadsRoot = path.resolve(getDownloadsRoot())
+  if (
+    taskRoot === downloadsRoot ||
+    !taskRoot.startsWith(`${downloadsRoot}${path.sep}`)
+  ) {
+    throw new Error('任务下载缓存路径不安全，已停止清理')
+  }
+
+  const protection = resolveDownloadCacheProtection(taskRoot, task)
+  if (protection.preserveRoot) return
+
+  let entries: Array<{ name: string }> = []
+  try {
+    entries = await fs.readdir(taskRoot, { withFileTypes: true })
+  } catch {
+    return
+  }
+
+  for (const entry of entries) {
+    if (isProtectedDownloadCacheEntry(protection, entry.name)) continue
+    await fs.rm(path.join(taskRoot, entry.name), {
+      recursive: true,
+      force: true,
+    })
+  }
+
+  if (protection.topLevelEntries.size === 0) {
+    await fs.rm(taskRoot, { recursive: true, force: true })
+  }
+}
 export const taskManager = new TaskManager()
 
 function sanitizeDownloadedName(title: string, format: string): string {

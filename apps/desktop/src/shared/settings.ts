@@ -6,10 +6,20 @@ import {
 
 export type SubtitleBurnMode = 'bilingual' | 'translated' | 'original'
 
+/** 字幕任务处理方式；默认保持现有翻译流程。 */
+export type SubtitleProcessingMode = 'translate' | 'extract'
+
 /** 字幕与烧录视频的输出位置。 */
 export type SubtitleOutputLocation =
   | 'output-subdirectory'
   | 'source-directory'
+
+export interface TaskSubmissionOptions {
+  subtitleProcessingMode: SubtitleProcessingMode
+  burnSubtitles: boolean
+  /** 烧录内容：双语堆叠 / 仅译文 / 仅原文 */
+  burnSubtitleMode: SubtitleBurnMode
+}
 
 /** 识别文本润色后端：本地 Ollama 或用户自备 OpenAI 兼容 API */
 export type PolishProvider = 'ollama' | 'byok'
@@ -26,9 +36,6 @@ export interface AppSettings {
   targetLanguage: string
   outputFormat: 'srt' | 'vtt' | 'txt'
   subtitleOutputLocation: SubtitleOutputLocation
-  burnSubtitles: boolean
-  /** 烧录内容：双语堆叠 / 仅译文 / 仅原文 */
-  burnSubtitleMode: SubtitleBurnMode
   /** 识别结果先经大模型润色再翻译 */
   polishTranscript: boolean
   /** 润色后端：本地 Ollama 或在线 BYOK */
@@ -45,6 +52,8 @@ export interface AppSettings {
   translatedSubtitleColor: string
 }
 
+export type TaskCreationSettings = AppSettings & TaskSubmissionOptions
+
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   asrEngine: DEFAULT_ASR_ENGINE,
   ollamaModel: DEFAULT_OLLAMA_MODEL,
@@ -52,8 +61,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   targetLanguage: 'zh',
   outputFormat: 'srt',
   subtitleOutputLocation: 'output-subdirectory',
-  burnSubtitles: false,
-  burnSubtitleMode: 'bilingual',
   polishTranscript: true,
   polishProvider: 'ollama',
   polishOllamaModel: '',
@@ -63,11 +70,23 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   translatedSubtitleColor: DEFAULT_TRANSLATED_SUBTITLE_COLOR,
 }
 
+export const DEFAULT_TASK_SUBMISSION_OPTIONS: TaskSubmissionOptions = {
+  subtitleProcessingMode: 'translate',
+  burnSubtitles: false,
+  burnSubtitleMode: 'bilingual',
+}
+
 function normalizeBurnSubtitleMode(value?: string | null): SubtitleBurnMode {
   if (value === 'translated' || value === 'original' || value === 'bilingual') {
     return value
   }
-  return DEFAULT_APP_SETTINGS.burnSubtitleMode
+  return DEFAULT_TASK_SUBMISSION_OPTIONS.burnSubtitleMode
+}
+
+function normalizeSubtitleProcessingMode(
+  value?: string | null
+): SubtitleProcessingMode {
+  return value === 'extract' ? 'extract' : 'translate'
 }
 
 function normalizeSubtitleOutputLocation(
@@ -161,8 +180,6 @@ export function normalizeAppSettings(
     subtitleOutputLocation: normalizeSubtitleOutputLocation(
       raw.subtitleOutputLocation
     ),
-    burnSubtitles: Boolean(raw.burnSubtitles),
-    burnSubtitleMode: normalizeBurnSubtitleMode(raw.burnSubtitleMode),
     polishTranscript:
       raw.polishTranscript === undefined
         ? DEFAULT_APP_SETTINGS.polishTranscript
@@ -179,6 +196,58 @@ export function normalizeAppSettings(
       raw.translatedSubtitleColor,
       DEFAULT_TRANSLATED_SUBTITLE_COLOR
     ),
+  }
+}
+
+export function normalizeTaskSubmissionOptions(
+  raw?: Partial<TaskSubmissionOptions> | null
+): TaskSubmissionOptions {
+  const subtitleProcessingMode = normalizeSubtitleProcessingMode(
+    raw?.subtitleProcessingMode
+  )
+  return {
+    subtitleProcessingMode,
+    burnSubtitles: Boolean(raw?.burnSubtitles),
+    burnSubtitleMode:
+      subtitleProcessingMode === 'extract'
+        ? 'original'
+        : normalizeBurnSubtitleMode(raw?.burnSubtitleMode),
+  }
+}
+
+export function normalizeTaskCreationSettings(
+  raw?: Partial<TaskCreationSettings> | null
+): TaskCreationSettings {
+  return {
+    ...normalizeAppSettings(raw),
+    ...normalizeTaskSubmissionOptions(raw),
+  }
+}
+
+export interface ParseAppSettingsResult {
+  settings: AppSettings
+  recovered: boolean
+}
+
+/** 安全解析 localStorage 设置；损坏值回退默认设置。 */
+export function parseStoredAppSettings(
+  serialized?: string | null
+): ParseAppSettingsResult {
+  if (!serialized) {
+    return { settings: { ...DEFAULT_APP_SETTINGS }, recovered: false }
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(serialized)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { settings: { ...DEFAULT_APP_SETTINGS }, recovered: true }
+    }
+    return {
+      settings: normalizeAppSettings(parsed as Partial<AppSettings>),
+      recovered: false,
+    }
+  } catch {
+    return { settings: { ...DEFAULT_APP_SETTINGS }, recovered: true }
   }
 }
 

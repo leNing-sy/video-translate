@@ -1,10 +1,12 @@
 // 视频翻译任务相关类型定义
 
 import type { AsrEngineId } from '../constants'
+import type { DetectedLanguage } from '../language'
 import type {
   PolishProvider,
   SubtitleBurnMode,
   SubtitleOutputLocation,
+  SubtitleProcessingMode,
 } from '../settings'
 
 /** 任务工作流类型：字幕翻译 vs 文稿整理 */
@@ -47,6 +49,7 @@ export interface TaskRuntimeOptions {
   asrEngine: AsrEngineId
   burnSubtitles: boolean
   burnSubtitleMode: SubtitleBurnMode
+  subtitleProcessingMode: SubtitleProcessingMode
   subtitleOutputLocation: SubtitleOutputLocation
   polishTranscript: boolean
   polishProvider: PolishProvider
@@ -77,6 +80,8 @@ export interface TranslationTask {
   status: TaskStatus
   progress: number
   sourceLanguage: string
+  /** ASR 或平台字幕实际识别出的原文语言。 */
+  detectedLanguage?: DetectedLanguage
   targetLanguage: string
   /** 创建/重试时的运行配置；旧任务可能缺失 */
   options?: TaskRuntimeOptions
@@ -119,6 +124,17 @@ export enum TaskStatus {
   PAUSED = 'paused',
   /** 协作式取消中 / 已取消 */
   CANCELLED = 'cancelled',
+}
+
+const BULK_DELETABLE_TASK_STATUSES = new Set<TaskStatus>([
+  TaskStatus.COMPLETED,
+  TaskStatus.FAILED,
+  TaskStatus.CANCELLED,
+])
+
+/** 批量清理只允许终态任务，避免误删排队/运行/暂停任务。 */
+export function isBulkDeletableTaskStatus(status: TaskStatus): boolean {
+  return BULK_DELETABLE_TASK_STATUSES.has(status)
 }
 
 /**

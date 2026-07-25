@@ -3,7 +3,7 @@ import { makeAppWithSingleInstanceLock } from 'lib/electron-app/factories/app/in
 import { makeAppSetup } from 'lib/electron-app/factories/app/setup'
 import { IpcChannels } from '../shared/ipc'
 import {
-  normalizeAppSettings,
+  normalizeTaskCreationSettings,
   type SubtitleBurnMode,
 } from '../shared/settings'
 import { normalizeTaskKind, type TaskKind } from '../shared/types/video'
@@ -21,6 +21,7 @@ import {
   getInstallationSuggestions,
 } from './utils/system-check'
 import { getAppDiagnosticPaths } from './utils/system-logger'
+import { resolveTaskArtifactPath } from './utils/task-artifact-path'
 import { MainWindow } from './windows/main'
 
 function setupIpcHandlers() {
@@ -33,8 +34,8 @@ function setupIpcHandlers() {
       kindRaw?: unknown
     ) => {
       try {
-        const settings = normalizeAppSettings(
-          settingsRaw as Parameters<typeof normalizeAppSettings>[0]
+        const settings = normalizeTaskCreationSettings(
+          settingsRaw as Parameters<typeof normalizeTaskCreationSettings>[0]
         )
         const kind = normalizeTaskKind(kindRaw)
         const taskIds: string[] = []
@@ -67,8 +68,8 @@ function setupIpcHandlers() {
       kindRaw?: unknown
     ) => {
       try {
-        const settings = normalizeAppSettings(
-          settingsRaw as Parameters<typeof normalizeAppSettings>[0]
+        const settings = normalizeTaskCreationSettings(
+          settingsRaw as Parameters<typeof normalizeTaskCreationSettings>[0]
         )
         const kind = normalizeTaskKind(kindRaw)
         const urls = Array.isArray(urlsRaw)
@@ -144,6 +145,23 @@ function setupIpcHandlers() {
     return { success: true }
   })
 
+  ipcMain.handle(IpcChannels.deleteTasks, async (_event, taskIdsRaw: unknown) => {
+    try {
+      const taskIds = Array.isArray(taskIdsRaw)
+        ? taskIdsRaw.filter((value): value is string => typeof value === 'string')
+        : []
+      const result = await taskManager.deleteTasks(taskIds)
+      return { success: true, ...result }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return {
+        success: false,
+        deletedTaskIds: [],
+        rejected: [],
+        error: message,
+      }
+    }
+  })
   ipcMain.handle(IpcChannels.retryTask, (_event, taskId: string) => {
     taskManager.retryTask(taskId)
     return { success: true }
@@ -238,22 +256,19 @@ function setupIpcHandlers() {
     }
   })
 
-  ipcMain.handle(
-    IpcChannels.openExternalUrl,
-    async (_event, url: string) => {
-      try {
-        if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
-          return { success: false, error: '仅支持 http(s) 链接' }
-        }
-        await shell.openExternal(url)
-        return { success: true }
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error)
-        return { success: false, error: errorMessage }
+  ipcMain.handle(IpcChannels.openExternalUrl, async (_event, url: string) => {
+    try {
+      if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+        return { success: false, error: '仅支持 http(s) 链接' }
       }
+      await shell.openExternal(url)
+      return { success: true }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error)
+      return { success: false, error: errorMessage }
     }
-  )
+  })
 
   ipcMain.handle(IpcChannels.getAsrStatus, async () => {
     try {
@@ -320,17 +335,7 @@ function setupIpcHandlers() {
         return { success: false, error: '任务不存在' }
       }
 
-      const artifacts = task.outputArtifacts
-      const artifactPath =
-        kind === 'video'
-          ? artifacts?.burnedVideo
-          : kind === 'subtitle'
-            ? artifacts?.translatedSubtitle ||
-              artifacts?.bilingualSubtitle ||
-              artifacts?.originalSubtitle
-            : kind === 'markdown'
-              ? artifacts?.polishedMarkdown
-              : artifacts?.outputDirectory
+      const artifactPath = resolveTaskArtifactPath(task, kind)
       if (!artifactPath) {
         return { success: false, error: '任务产物不存在' }
       }

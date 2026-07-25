@@ -22,16 +22,17 @@ import {
 } from 'renderer/components/ui/card'
 import { Progress } from 'renderer/components/ui/progress'
 import {
-  DEFAULT_APP_SETTINGS,
-  normalizeAppSettings,
+  parseStoredAppSettings,
   type SubtitleBurnMode,
 } from 'shared/settings'
 import {
+  isBulkDeletableTaskStatus,
   TaskStatus,
   type TaskOutputArtifacts,
   type TranslationTask,
 } from 'shared/types/video'
 import { TaskLogs } from './TaskLogs'
+import { formatDuration, formatProcessingTime } from './task-time'
 
 const { App } = window
 
@@ -106,19 +107,6 @@ const formatFileSize = (bytes: number): string => {
   return `${Number.parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`
 }
 
-const formatDuration = (seconds: number): string => {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = Math.floor(seconds % 60)
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs
-      .toString()
-      .padStart(2, '0')}`
-  }
-  return `${minutes}:${secs.toString().padStart(2, '0')}`
-}
-
 const formatDate = (date: string): string => {
   return date.split(' ')[0]
 }
@@ -144,6 +132,10 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
   const [openOutputMenuTaskId, setOpenOutputMenuTaskId] = useState<string>()
   const [openBurnMenuTaskId, setOpenBurnMenuTaskId] = useState<string>()
   const [burningTaskIds, setBurningTaskIds] = useState<Set<string>>(new Set())
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(
+    new Set()
+  )
+  const [deletingTasks, setDeletingTasks] = useState(false)
   const [banner, setBanner] = useState<{
     type: 'error' | 'info'
     text: string
@@ -153,6 +145,24 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
     () => tasks.filter(t => t.status === TaskStatus.FAILED).length,
     [tasks]
   )
+  const deletableTaskIds = useMemo(
+    () =>
+      tasks
+        .filter(task => isBulkDeletableTaskStatus(task.status))
+        .map(task => task.id),
+    [tasks]
+  )
+
+  useEffect(() => {
+    const valid = new Set(deletableTaskIds)
+    setSelectedTaskIds(previous => {
+      const next = new Set([...previous].filter(taskId => valid.has(taskId)))
+      const unchanged =
+        next.size === previous.size &&
+        [...next].every(taskId => previous.has(taskId))
+      return unchanged ? previous : next
+    })
+  }, [deletableTaskIds])
 
   // 自定义菜单：Esc 关闭（无 portal 菜单库时的可达性补齐）
   useEffect(() => {
@@ -182,9 +192,7 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
           | undefined
         try {
           const raw = localStorage.getItem('video-translate-settings')
-          const settings = normalizeAppSettings(
-            raw ? JSON.parse(raw) : DEFAULT_APP_SETTINGS
-          )
+          const settings = parseStoredAppSettings(raw).settings
           colors = {
             originalColor: settings.originalSubtitleColor,
             translatedColor: settings.translatedSubtitleColor,
@@ -268,6 +276,53 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
     [onTasksChange, showError]
   )
 
+  const toggleTaskSelection = (taskId: string) => {
+    setSelectedTaskIds(previous => {
+      const next = new Set(previous)
+      if (next.has(taskId)) next.delete(taskId)
+      else next.add(taskId)
+      return next
+    })
+  }
+
+  const handleBulkDelete = async () => {
+    const taskIds = [...selectedTaskIds]
+    if (taskIds.length === 0) return
+    if (
+      !window.confirm(
+        `确定删除已选的 ${taskIds.length} 个历史任务？只删除任务记录和应用缓存，不删除源文件及结果文件。`
+      )
+    ) {
+      return
+    }
+
+    setDeletingTasks(true)
+    setBanner(null)
+    try {
+      const result = await App.deleteTasks(taskIds)
+      if (!result.success) throw new Error(result.error || '批量删除失败')
+      setSelectedTaskIds(new Set())
+      if (result.rejected.length > 0) {
+        setBanner({
+          type: 'error',
+          text: `已删除 ${result.deletedTaskIds.length} 个任务，${result.rejected.length} 个任务未删除。`,
+        })
+      } else {
+        setBanner({
+          type: 'info',
+          text: `已删除 ${result.deletedTaskIds.length} 个历史任务。源文件和结果文件已保留。`,
+        })
+      }
+      onTasksChange()
+    } catch (error) {
+      showError(
+        `批量删除失败：${error instanceof Error ? error.message : String(error)}`
+      )
+    } finally {
+      setDeletingTasks(false)
+    }
+  }
+
   const toggleTaskExpanded = (taskId: string) => {
     const newExpanded = new Set(expandedTasks)
     if (newExpanded.has(taskId)) {
@@ -308,7 +363,36 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-lg font-semibold">翻译任务</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {deletableTaskIds.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={deletingTasks}
+              onClick={() =>
+                setSelectedTaskIds(previous =>
+                  previous.size === deletableTaskIds.length
+                    ? new Set()
+                    : new Set(deletableTaskIds)
+                )
+              }
+            >
+              {selectedTaskIds.size === deletableTaskIds.length
+                ? '取消全选'
+                : '全选历史'}
+            </Button>
+          )}
+          {selectedTaskIds.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deletingTasks}
+              onClick={() => void handleBulkDelete()}
+            >
+              <Trash2 className="h-4 w-4" />
+              {deletingTasks ? '删除中…' : `删除已选 (${selectedTaskIds.size})`}
+            </Button>
+          )}
           {failedCount > 0 && (
             <Badge variant="destructive">{failedCount} 个失败</Badge>
           )}
@@ -340,6 +424,10 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
 
       {tasks.map(task => {
         const isExpanded = expandedTasks.has(task.id)
+        const processingTime = formatProcessingTime(
+          task.createdAt,
+          task.completedAt
+        )
         const isBurning =
           task.status === TaskStatus.BURNING_SUBTITLES ||
           burningTaskIds.has(task.id)
@@ -354,6 +442,16 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
             <CardHeader className="gap-0 px-5 py-3.5">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
+                  {isBulkDeletableTaskStatus(task.status) && (
+                    <input
+                      type="checkbox"
+                      className="mt-1 size-4 accent-primary"
+                      aria-label={`选择任务 ${task.videoFile.name}`}
+                      checked={selectedTaskIds.has(task.id)}
+                      disabled={deletingTasks}
+                      onChange={() => toggleTaskSelection(task.id)}
+                    />
+                  )}
                   <FileVideo className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
                   <div className="min-w-0">
                     <CardTitle className="truncate text-sm font-semibold">
@@ -370,8 +468,9 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
                         <Clock className="h-3.5 w-3.5" />
-                        {formatDuration(task.videoFile.duration)}
+                        视频 {formatDuration(task.videoFile.duration)}
                       </span>
+                      {processingTime && <span>处理 {processingTime}</span>}
                       <span>{formatFileSize(task.videoFile.size)}</span>
                       <span className="inline-flex items-center gap-1">
                         <Calendar className="h-3.5 w-3.5" />
@@ -455,7 +554,7 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="font-medium">源语言:</span>{' '}
-                      {task.sourceLanguage}
+                      {task.detectedLanguage ?? task.sourceLanguage}
                     </div>
                     <div>
                       <span className="font-medium">目标语言:</span>{' '}
