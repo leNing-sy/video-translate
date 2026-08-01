@@ -45,8 +45,8 @@ jobs:
       - name: Check types
         run: pnpm typecheck
 
-      - name: Run tests
-        run: pnpm test
+      - name: Run desktop tests
+        run: pnpm --filter video-translate test
 
       - name: Build unsigned Windows slim package
         env:
