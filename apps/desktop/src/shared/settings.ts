@@ -6,13 +6,36 @@ import {
 
 export type SubtitleBurnMode = 'bilingual' | 'translated' | 'original'
 
-/** 字幕任务处理方式；默认保持现有翻译流程。 */
+/** 字幕任务处理方式；个人版默认仅提取原文。 */
 export type SubtitleProcessingMode = 'translate' | 'extract'
 
 /** 字幕与烧录视频的输出位置。 */
 export type SubtitleOutputLocation =
   | 'output-subdirectory'
   | 'source-directory'
+
+export type OnlineTranslationSiteId = 'sublingo' | 'newzone' | 'hoothin'
+
+export interface OnlineTranslationSite {
+  id: OnlineTranslationSiteId
+  name: string
+  url: string
+}
+
+/** 仅允许打开固定的第三方字幕翻译页面，不接受用户提供的任意 URL。 */
+export const ONLINE_TRANSLATION_SITES: readonly OnlineTranslationSite[] = [
+  { id: 'sublingo', name: 'SubLingo', url: 'https://sublingo.cc/' },
+  {
+    id: 'newzone',
+    name: 'NewZone',
+    url: 'https://tools.newzone.top/zh/subtitle-translator',
+  },
+  {
+    id: 'hoothin',
+    name: 'Hoothin',
+    url: 'https://subtitle.hoothin.com/en/translate',
+  },
+]
 
 export interface TaskSubmissionOptions {
   subtitleProcessingMode: SubtitleProcessingMode
@@ -36,6 +59,7 @@ export interface AppSettings {
   targetLanguage: string
   outputFormat: 'srt' | 'vtt' | 'txt'
   subtitleOutputLocation: SubtitleOutputLocation
+  onlineTranslationSite: OnlineTranslationSiteId
   /** 识别结果先经大模型润色再翻译 */
   polishTranscript: boolean
   /** 润色后端：本地 Ollama 或在线 BYOK */
@@ -61,6 +85,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   targetLanguage: 'zh',
   outputFormat: 'srt',
   subtitleOutputLocation: 'output-subdirectory',
+  onlineTranslationSite: 'sublingo',
   polishTranscript: true,
   polishProvider: 'ollama',
   polishOllamaModel: '',
@@ -71,7 +96,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 }
 
 export const DEFAULT_TASK_SUBMISSION_OPTIONS: TaskSubmissionOptions = {
-  subtitleProcessingMode: 'translate',
+  subtitleProcessingMode: 'extract',
   burnSubtitles: false,
   burnSubtitleMode: 'bilingual',
 }
@@ -86,7 +111,8 @@ function normalizeBurnSubtitleMode(value?: string | null): SubtitleBurnMode {
 function normalizeSubtitleProcessingMode(
   value?: string | null
 ): SubtitleProcessingMode {
-  return value === 'extract' ? 'extract' : 'translate'
+  if (value === 'translate' || value === 'extract') return value
+  return DEFAULT_TASK_SUBMISSION_OPTIONS.subtitleProcessingMode
 }
 
 function normalizeSubtitleOutputLocation(
@@ -95,6 +121,13 @@ function normalizeSubtitleOutputLocation(
   return value === 'source-directory'
     ? 'source-directory'
     : 'output-subdirectory'
+}
+
+export function normalizeOnlineTranslationSite(
+  value?: string | null
+): OnlineTranslationSiteId {
+  if (value === 'newzone' || value === 'hoothin') return value
+  return 'sublingo'
 }
 
 function normalizePolishProvider(value?: string | null): PolishProvider {
@@ -179,6 +212,9 @@ export function normalizeAppSettings(
     outputFormat: raw.outputFormat || DEFAULT_APP_SETTINGS.outputFormat,
     subtitleOutputLocation: normalizeSubtitleOutputLocation(
       raw.subtitleOutputLocation
+    ),
+    onlineTranslationSite: normalizeOnlineTranslationSite(
+      raw.onlineTranslationSite
     ),
     polishTranscript:
       raw.polishTranscript === undefined

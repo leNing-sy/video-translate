@@ -3,9 +3,32 @@ import { test } from 'vitest'
 import {
   DEFAULT_APP_SETTINGS,
   normalizeAppSettings,
+  normalizeOnlineTranslationSite,
   normalizeTaskSubmissionOptions,
   parseStoredAppSettings,
 } from './settings'
+
+test('新字幕任务默认仅提取原文并允许手动切换翻译', () => {
+  assert.equal(
+    normalizeTaskSubmissionOptions({}).subtitleProcessingMode,
+    'extract'
+  )
+  assert.equal(
+    normalizeTaskSubmissionOptions({ subtitleProcessingMode: 'translate' })
+      .subtitleProcessingMode,
+    'translate'
+  )
+})
+
+test('在线翻译网站只接受固定白名单', () => {
+  assert.equal(normalizeOnlineTranslationSite('newzone'), 'newzone')
+  assert.equal(normalizeOnlineTranslationSite('hoothin'), 'hoothin')
+  assert.equal(
+    normalizeOnlineTranslationSite('https://example.com'),
+    'sublingo'
+  )
+  assert.equal(normalizeAppSettings({}).onlineTranslationSite, 'sublingo')
+})
 
 test('normalizeAppSettings 提供润色 BYOK 字段默认值', () => {
   const settings = normalizeAppSettings({})
