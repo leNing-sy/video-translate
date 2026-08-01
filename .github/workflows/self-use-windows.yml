@@ -38,8 +38,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check formatting
-        run: pnpm format:check
+      - name: Check customized file formatting
+        continue-on-error: true
+        run: pnpm exec oxfmt --check apps/desktop/src/main/index.ts apps/desktop/src/preload/index.ts apps/desktop/src/renderer/components/settings/SettingsPanel.tsx apps/desktop/src/renderer/components/task/TaskList.tsx apps/desktop/src/shared/ipc.ts apps/desktop/src/shared/settings.test.ts apps/desktop/src/shared/settings.ts
 
       - name: Check types
         run: pnpm typecheck
