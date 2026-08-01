@@ -6,6 +6,7 @@ import {
   FileVideo,
   Flame,
   FolderOpen,
+  Languages,
   Pause,
   Play,
   RotateCcw,
@@ -22,11 +23,15 @@ import {
 } from 'renderer/components/ui/card'
 import { Progress } from 'renderer/components/ui/progress'
 import {
+  normalizeAppSettings,
+  ONLINE_TRANSLATION_SITES,
   parseStoredAppSettings,
+  type OnlineTranslationSiteId,
   type SubtitleBurnMode,
 } from 'shared/settings'
 import {
   isBulkDeletableTaskStatus,
+  normalizeTaskKind,
   TaskStatus,
   type TaskOutputArtifacts,
   type TranslationTask,
@@ -131,6 +136,8 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
   const [openOutputMenuTaskId, setOpenOutputMenuTaskId] = useState<string>()
   const [openBurnMenuTaskId, setOpenBurnMenuTaskId] = useState<string>()
+  const [openTranslationMenuTaskId, setOpenTranslationMenuTaskId] =
+    useState<string>()
   const [burningTaskIds, setBurningTaskIds] = useState<Set<string>>(new Set())
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(
     new Set()
@@ -166,16 +173,26 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
 
   // 自定义菜单：Esc 关闭（无 portal 菜单库时的可达性补齐）
   useEffect(() => {
-    if (!openOutputMenuTaskId && !openBurnMenuTaskId) return
+    if (
+      !openOutputMenuTaskId &&
+      !openBurnMenuTaskId &&
+      !openTranslationMenuTaskId
+    )
+      return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpenOutputMenuTaskId(undefined)
         setOpenBurnMenuTaskId(undefined)
+        setOpenTranslationMenuTaskId(undefined)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [openOutputMenuTaskId, openBurnMenuTaskId])
+  }, [
+    openOutputMenuTaskId,
+    openBurnMenuTaskId,
+    openTranslationMenuTaskId,
+  ])
 
   const showError = useCallback((text: string) => {
     setBanner({ type: 'error', text })
@@ -225,6 +242,39 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
       }
     },
     [onTasksChange, showError]
+  )
+
+  const handleOnlineTranslation = useCallback(
+    async (taskId: string, requestedSite?: OnlineTranslationSiteId) => {
+      setOpenTranslationMenuTaskId(undefined)
+      setBanner(null)
+      try {
+        const parsed = parseStoredAppSettings(
+          localStorage.getItem('video-translate-settings')
+        )
+        const site = requestedSite ?? parsed.settings.onlineTranslationSite
+        const result = await App.openOnlineTranslation(taskId, site)
+        if (!result.success) {
+          throw new Error(result.error || '无法打开在线翻译网站')
+        }
+
+        if (requestedSite) {
+          const settings = normalizeAppSettings({
+            ...parsed.settings,
+            onlineTranslationSite: requestedSite,
+          })
+          localStorage.setItem(
+            'video-translate-settings',
+            JSON.stringify(settings)
+          )
+        }
+      } catch (error) {
+        console.error('打开在线翻译失败:', error)
+        const message = error instanceof Error ? error.message : String(error)
+        showError(`在线翻译打开失败：${message}`)
+      }
+    },
+    [showError]
   )
 
   const handleTaskAction = useCallback(
@@ -436,6 +486,7 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
           !task.outputArtifacts?.burnedVideo
         const labels = artifactLabels(task.outputArtifacts)
         const isComplete = task.status === TaskStatus.COMPLETED || isBurning
+        const isSubtitleTask = normalizeTaskKind(task.kind) === 'subtitle'
 
         return (
           <Card key={task.id} className="gap-0 py-0">
@@ -718,6 +769,59 @@ export function TaskList({ tasks, onTasksChange, onGoUpload }: TaskListProps) {
                             <FolderOpen className="h-4 w-4" />
                             打开结果文件夹
                           </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {isComplete && isSubtitleTask && (
+                    <div className="relative flex">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-r-none border-r-0"
+                        disabled={isBurning}
+                        title="打开默认在线翻译网站和字幕结果文件夹"
+                        onClick={() => void handleOnlineTranslation(task.id)}
+                      >
+                        <Languages className="h-4 w-4" />
+                        在线翻译
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-l-none px-2"
+                        aria-label="选择在线翻译网站"
+                        aria-haspopup="menu"
+                        aria-expanded={
+                          openTranslationMenuTaskId === task.id
+                        }
+                        disabled={isBurning}
+                        onClick={() =>
+                          setOpenTranslationMenuTaskId(current =>
+                            current === task.id ? undefined : task.id
+                          )
+                        }
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                      {openTranslationMenuTaskId === task.id && (
+                        <div
+                          role="menu"
+                          className="absolute bottom-full right-0 z-20 mb-2 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+                        >
+                          {ONLINE_TRANSLATION_SITES.map(site => (
+                            <Button
+                              key={site.id}
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-start"
+                              onClick={() =>
+                                void handleOnlineTranslation(task.id, site.id)
+                              }
+                            >
+                              {site.name}
+                            </Button>
+                          ))}
                         </div>
                       )}
                     </div>

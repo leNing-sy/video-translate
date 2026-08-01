@@ -35,9 +35,11 @@ import { DEFAULT_OLLAMA_MODEL } from '../../../shared/constants'
 import {
   DEFAULT_APP_SETTINGS,
   normalizeAppSettings,
+  ONLINE_TRANSLATION_SITES,
   normalizeHexColor,
   normalizeOllamaModel,
   parseStoredAppSettings,
+  type OnlineTranslationSiteId,
   type PolishProvider,
   type SubtitleOutputLocation,
 } from '../../../shared/settings'
@@ -648,6 +650,39 @@ export function SettingsPanel() {
               </Select>
               <p className="text-xs text-muted-foreground">
                 同时应用于字幕文件和烧录后的视频；文稿仍保存在 output 子目录。
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="online-translation-site">在线翻译网站</Label>
+              <Select
+                value={settings.onlineTranslationSite}
+                onValueChange={value => {
+                  if (value == null) return
+                  setSettings(prev => ({
+                    ...prev,
+                    onlineTranslationSite: value as OnlineTranslationSiteId,
+                  }))
+                }}
+                items={Object.fromEntries(
+                  ONLINE_TRANSLATION_SITES.map(site => [site.id, site.name])
+                )}
+              >
+                <SelectTrigger
+                  id="online-translation-site"
+                  className="w-full min-w-0"
+                >
+                  <SelectValue placeholder="选择在线翻译网站" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ONLINE_TRANSLATION_SITES.map(site => (
+                    <SelectItem key={site.id} value={site.id}>
+                      {site.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                任务完成后打开所选网站和本地字幕结果文件夹，由你手动上传字幕。
               </p>
             </div>
           </CardContent>
