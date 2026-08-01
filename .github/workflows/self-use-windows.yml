@@ -2,6 +2,9 @@ name: 新版二开 Windows 精简版
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - custom/personal
 
 permissions:
   contents: read
