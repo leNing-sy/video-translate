@@ -511,6 +511,7 @@ async function translateStage(
   )
 
   const texts = segments.map(segment => getTranslateInput(segment))
+  let fallbackCount = 0
   const translated = await ollamaClient.translateBatch(
     texts,
     task.sourceLanguage,
@@ -520,7 +521,31 @@ async function translateStage(
       const normalized = 65 + (completed / total) * 20
       void hooks.onStatus(TaskStatus.TRANSLATING, normalized)
     },
-    signal
+    signal,
+    issue => {
+      if (issue.action === 'retry') {
+        hooks.onLog(
+          'warn',
+          `翻译第 ${issue.index}/${issue.total} 段将重试`,
+          `${issue.reason}（第 ${issue.attempt}/${issue.maxAttempts} 次）原文：${issue.source}`
+        )
+        return
+      }
+      if (issue.action === 'fallback') {
+        fallbackCount += 1
+        hooks.onLog(
+          'warn',
+          `翻译第 ${issue.index}/${issue.total} 段回退原文`,
+          `${issue.reason}；已保留原文：${issue.source}`
+        )
+        return
+      }
+      hooks.onLog(
+        'error',
+        `翻译第 ${issue.index}/${issue.total} 段失败`,
+        `${issue.reason}；原文：${issue.source}`
+      )
+    }
   )
 
   const merged = segments.map((segment, index) => ({
@@ -540,7 +565,15 @@ async function translateStage(
   databaseManager.replaceTranscriptionSegments(task.id, taskSegments)
   hooks.onSegments(taskSegments)
 
-  hooks.onLog('success', '字幕翻译完成', `翻译 ${merged.length} 个段落`)
+  if (fallbackCount > 0) {
+    hooks.onLog(
+      'warn',
+      '字幕翻译完成（含回退）',
+      `共 ${merged.length} 段，其中 ${fallbackCount} 段空结果已回退为原文`
+    )
+  } else {
+    hooks.onLog('success', '字幕翻译完成', `翻译 ${merged.length} 个段落`)
+  }
   return merged
 }
 

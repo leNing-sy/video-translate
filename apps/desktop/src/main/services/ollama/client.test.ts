@@ -11,19 +11,21 @@ test('找不到 Ollama 可执行文件时启动守护进程返回失败而不抛
   assert.equal(await client.startDaemon(), false)
 })
 
-test('translateBatch 在任一段翻译失败时报告段落位置并终止', async () => {
+test('translateBatch 在任一段服务错误重试耗尽后报告位置并终止', async () => {
   const client = new OllamaClient()
   let calls = 0
   client.generate = async () => {
     calls += 1
-    if (calls === 2) throw new Error('model unavailable')
-    return '译文'
+    // 第 1 段成功；第 2 段两次失败（默认 maxAttempts=2）
+    if (calls === 1) return '译文'
+    throw new Error('model unavailable')
   }
 
   await assert.rejects(
     client.translateBatch(['first', 'second', 'third'], 'en', 'zh'),
     /segment 2\/3.*model unavailable/
   )
+  assert.equal(calls, 3)
 })
 
 test('translateBatch 每次只提交当前段避免翻译串段', async () => {
@@ -46,12 +48,23 @@ test('translateBatch 每次只提交当前段避免翻译串段', async () => {
   assert.doesNotMatch(prompts[1], /ending/)
 })
 
-test('翻译模型返回空文本时明确失败', async () => {
+test('翻译模型持续返回空文本时回退原文', async () => {
   const client = new OllamaClient()
   client.generate = async () => '   '
 
-  await assert.rejects(
-    client.translateBatch(['source'], 'en', 'zh'),
-    /翻译结果为空/
+  const issues: Array<{ action: string; source: string }> = []
+  const translated = await client.translateBatch(
+    ['source text'],
+    'en',
+    'zh',
+    undefined,
+    undefined,
+    undefined,
+    issue => {
+      issues.push({ action: issue.action, source: issue.source })
+    }
   )
+
+  assert.deepEqual(translated, ['source text'])
+  assert.ok(issues.some(i => i.action === 'fallback'))
 })

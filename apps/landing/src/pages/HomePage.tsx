@@ -1,7 +1,9 @@
 import {
   ArrowRight,
   Check,
+  Clock,
   FileText,
+  FolderOpen,
   Github,
   Languages,
   Link2,
@@ -45,8 +47,8 @@ const subtitleWorkflow = [
   },
   {
     number: '03',
-    label: '翻译润色',
-    detail: 'Ollama 本地翻译；可选 BYOK 润色识别原文',
+    label: '选择处理方式',
+    detail: '仅提取原文无需 Ollama；也可本地翻译并按需润色',
     icon: Languages,
   },
   {
@@ -105,11 +107,11 @@ const features = [
       '有站内人工或自动字幕时直接采用，跳过语音识别；没有字幕再走本地 ASR。',
   },
   {
-    icon: Waves,
-    eyebrow: 'SHERPA-ONNX',
-    title: '听懂真实语境',
+    icon: FileText,
+    eyebrow: 'ORIGINAL ONLY',
+    title: '只要原文，也能直接开始',
     description:
-      'SenseVoice 支持中、英、日、韩、粤语，适合课程、访谈和内容创作。',
+      '选择「仅提取原文」后，只生成原文 SRT，不启动翻译流程，也无需安装 Ollama。',
   },
   {
     icon: NotebookPen,
@@ -121,9 +123,9 @@ const features = [
   {
     icon: Languages,
     eyebrow: 'SUBTITLES',
-    title: '字幕翻译与硬烧录',
+    title: '翻译、导出与硬烧录',
     description:
-      '本地 Ollama 翻译；双语 SRT / ASS 导出，可选硬字幕烧录与颜色自定义。',
+      '本地 Ollama 翻译；原文、译文、双语 SRT 与 ASS 导出，可选硬字幕烧录。',
   },
   {
     icon: LockKeyhole,
@@ -136,11 +138,34 @@ const features = [
 
 const highlights = [
   '字幕工作台 + 文稿整理',
+  '仅提取原文无需 Ollama',
   '在线链接 / 本地文件',
-  '平台字幕优先于 ASR',
-  'SenseVoice 本地识别',
-  'Markdown 全屏预览',
-  '双语字幕与硬烧录',
+  '输出目录可配置',
+  '实际语言命名产物',
+  '任务批量管理',
+]
+
+const releaseHighlights = [
+  {
+    icon: Languages,
+    title: '空译自动重试',
+    detail: '单段翻译结果为空时自动再试一次，降低 hy-mt 等小模型的偶发空跑。',
+  },
+  {
+    icon: FileText,
+    title: '失败段回退原文',
+    detail: '仍为空则保留该段原文，整条任务继续完成，不再因一段挂掉全部。',
+  },
+  {
+    icon: Clock,
+    title: '日志可定位',
+    detail: '重试、回退与硬错误均写入处理日志，并带上失败段原文预览。',
+  },
+  {
+    icon: FolderOpen,
+    title: '0.8.0 能力保留',
+    detail: '仅提取原文、输出位置可选、批量清理任务与产物命名规则继续可用。',
+  },
 ]
 
 export function HomePage() {
@@ -162,8 +187,8 @@ export function HomePage() {
             <em>跨越语言。</em>
           </h1>
           <p className="hero-description">
-            本地文件或在线链接：一条流水线做字幕翻译与硬烧录，另一条把音视频整理成
-            Markdown 文稿。平台字幕优先、没有再 ASR——素材默认留在你的电脑里。
+            本地文件或在线链接：提取原文 SRT、翻译字幕与硬烧录，或把音视频整理成
+            Markdown 文稿。仅提取原文无需 Ollama，素材默认留在你的电脑里。
           </p>
           <DownloadCta
             appearance="primary"
@@ -272,8 +297,8 @@ export function HomePage() {
           <div className="floating-card status-card is-live">
             <ScanLine size={17} />
             <div>
-              <span>平台字幕</span>
-              <strong>已就绪</strong>
+              <span>原文字幕</span>
+              <strong>无需 Ollama</strong>
             </div>
             <i>
               <span />
@@ -285,7 +310,7 @@ export function HomePage() {
           </div>
           <div className="floating-card url-card is-live">
             <WandSparkles size={15} />
-            链接 → 字幕 / 文稿
+            实际语言 → 文件名
           </div>
         </div>
       </section>
@@ -295,13 +320,38 @@ export function HomePage() {
           在线链接下载 <Sparkles size={16} /> 平台字幕优先{' '}
           <Sparkles size={16} />
           本地语音识别 <Sparkles size={16} /> 多语言翻译 <Sparkles size={16} />
-          Markdown 文稿 <Sparkles size={16} /> 双语硬字幕{' '}
-          <Sparkles size={16} /> 隐私优先 <Sparkles size={16} />
+          Markdown 文稿 <Sparkles size={16} /> 双语硬字幕 <Sparkles size={16} />{' '}
+          仅提取原文 <Sparkles size={16} />
           在线链接下载 <Sparkles size={16} /> 平台字幕优先{' '}
           <Sparkles size={16} />
           本地语音识别
         </div>
       </div>
+
+      <section
+        className="section release-section"
+        aria-labelledby="release-title"
+      >
+        <div className="release-heading">
+          <p>v{APP_VERSION}</p>
+          <h2 id="release-title">翻译更稳，偶发空译不再打断整条任务。</h2>
+          <span>
+            0.8.1
+            单段翻译空结果会自动重试，仍为空则回退原文并写进日志；服务硬错误才终止任务。
+          </span>
+        </div>
+        <div className="release-list">
+          {releaseHighlights.map(({ icon: Icon, title, detail }) => (
+            <article key={title}>
+              <Icon size={20} strokeWidth={1.8} />
+              <div>
+                <h3>{title}</h3>
+                <p>{detail}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <section className="section features-section" id="features">
         <div className="section-heading">
@@ -327,8 +377,8 @@ export function HomePage() {
         <div className="workflow-intro">
           <h2>两条工作流，各自四步完成。</h2>
           <p>
-            顶栏切换「字幕」或「文稿」：字幕线做翻译与导出；文稿线把识别结果整篇润色为
-            Markdown。共享 ASR 与下载，任务列表彼此独立。
+            顶栏切换「字幕」或「文稿」：字幕线可仅提取原文，也可翻译与导出；文稿线把识别结果整篇润色为
+            Markdown。两条线共享 ASR 与下载，任务列表彼此独立。
           </p>
         </div>
         <div className="workflow-dual">

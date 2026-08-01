@@ -9,31 +9,31 @@ import {
   Link2,
   Terminal,
   Wrench,
-} from "lucide-react";
-import { useEffect, useState } from "react";
+} from 'lucide-react'
+import { useEffect, useState } from 'react'
 
-import { SiteFooter } from "../components/SiteFooter";
-import { SiteHeader } from "../components/SiteHeader";
-import { DownloadCta } from "../components/DownloadCta";
-import { APP_VERSION, releaseUrl, repositoryUrl } from "../site";
+import { SiteFooter } from '../components/SiteFooter'
+import { SiteHeader } from '../components/SiteHeader'
+import { DownloadCta } from '../components/DownloadCta'
+import { APP_VERSION, releaseUrl, repositoryUrl } from '../site'
 
 const toc = [
-  { id: "overview", label: "概览" },
-  { id: "install-app", label: "安装应用" },
-  { id: "packages", label: "bundled / slim" },
-  { id: "unsigned", label: "非签名包" },
-  { id: "ffmpeg", label: "FFmpeg" },
-  { id: "ollama", label: "Ollama" },
-  { id: "ytdlp", label: "yt-dlp" },
-  { id: "asr", label: "ASR 模型" },
-  { id: "usage", label: "使用教程" },
-  { id: "faq", label: "常见问题" },
-] as const;
+  { id: 'overview', label: '概览' },
+  { id: 'install-app', label: '安装应用' },
+  { id: 'packages', label: 'bundled / slim' },
+  { id: 'unsigned', label: '非签名包' },
+  { id: 'ffmpeg', label: 'FFmpeg' },
+  { id: 'ollama', label: 'Ollama' },
+  { id: 'ytdlp', label: 'yt-dlp' },
+  { id: 'asr', label: 'ASR 模型' },
+  { id: 'usage', label: '使用教程' },
+  { id: 'faq', label: '常见问题' },
+] as const
 
 type CodeBlockProps = {
-  label?: string;
-  children: string;
-};
+  label?: string
+  children: string
+}
 
 function CodeBlock({ label, children }: CodeBlockProps) {
   return (
@@ -43,7 +43,7 @@ function CodeBlock({ label, children }: CodeBlockProps) {
         <code>{children.trim()}</code>
       </pre>
     </div>
-  );
+  )
 }
 
 function PlatformTabs({
@@ -51,20 +51,20 @@ function PlatformTabs({
   windows,
   linux,
 }: {
-  mac: string;
-  windows: string;
-  linux: string;
+  mac: string
+  windows: string
+  linux: string
 }) {
-  const [os, setOs] = useState<"mac" | "windows" | "linux">("mac");
+  const [os, setOs] = useState<'mac' | 'windows' | 'linux'>('mac')
 
   return (
     <div className="docs-os">
       <div className="docs-os-tabs" role="tablist" aria-label="操作系统">
         {(
           [
-            ["mac", "macOS"],
-            ["windows", "Windows"],
-            ["linux", "Linux"],
+            ['mac', 'macOS'],
+            ['windows', 'Windows'],
+            ['linux', 'Linux'],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -72,7 +72,7 @@ function PlatformTabs({
             type="button"
             role="tab"
             aria-selected={os === key}
-            className={os === key ? "active" : undefined}
+            className={os === key ? 'active' : undefined}
             onClick={() => setOs(key)}
           >
             {label}
@@ -80,53 +80,53 @@ function PlatformTabs({
         ))}
       </div>
       <CodeBlock
-        label={os === "mac" ? "macOS" : os === "windows" ? "Windows" : "Linux"}
+        label={os === 'mac' ? 'macOS' : os === 'windows' ? 'Windows' : 'Linux'}
       >
-        {os === "mac" ? mac : os === "windows" ? windows : linux}
+        {os === 'mac' ? mac : os === 'windows' ? windows : linux}
       </CodeBlock>
     </div>
-  );
+  )
 }
 
 export function DocsPage() {
-  const [activeId, setActiveId] = useState<string>(toc[0].id);
+  const [activeId, setActiveId] = useState<string>(toc[0].id)
 
   useEffect(() => {
-    document.title = "文档｜视频翻译助手";
+    document.title = '文档｜视频翻译助手'
     return () => {
-      document.title = "视频翻译助手｜让每段声音跨越语言";
-    };
-  }, []);
+      document.title = '视频翻译助手｜让每段声音跨越语言'
+    }
+  }, [])
 
   useEffect(() => {
     const sections = toc
-      .map((item) => document.getElementById(item.id))
-      .filter((el): el is HTMLElement => Boolean(el));
+      .map(item => document.getElementById(item.id))
+      .filter((el): el is HTMLElement => Boolean(el))
 
     if (sections.length === 0) {
-      return;
+      return
     }
 
     const observer = new IntersectionObserver(
-      (entries) => {
+      entries => {
         const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+          .filter(entry => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)
         if (visible[0]?.target.id) {
-          setActiveId(visible[0].target.id);
+          setActiveId(visible[0].target.id)
         }
       },
       {
-        rootMargin: "-20% 0px -55% 0px",
+        rootMargin: '-20% 0px -55% 0px',
         threshold: [0.1, 0.25, 0.5],
-      },
-    );
+      }
+    )
 
     for (const section of sections) {
-      observer.observe(section);
+      observer.observe(section)
     }
-    return () => observer.disconnect();
-  }, []);
+    return () => observer.disconnect()
+  }, [])
 
   return (
     <main className="docs-page">
@@ -143,7 +143,8 @@ export function DocsPage() {
         </h1>
         <p className="docs-lead">
           从系统工具到应用内流程：FFmpeg、Ollama、yt-dlp 怎么装，以及本地文件 /
-          在线链接如何做字幕翻译或 Markdown 文稿。依赖缺失时应用启动会自检并给出安装提示。
+          在线链接如何提取原文、翻译字幕或生成 Markdown
+          文稿。依赖缺失时应用启动会自检并给出安装提示。
         </p>
         <DownloadCta
           appearance="primary"
@@ -160,11 +161,11 @@ export function DocsPage() {
         <aside className="docs-toc" aria-label="文档目录">
           <p className="docs-toc-title">目录</p>
           <nav>
-            {toc.map((item) => (
+            {toc.map(item => (
               <a
                 key={item.id}
                 href={`#${item.id}`}
-                data-active={activeId === item.id ? "true" : undefined}
+                data-active={activeId === item.id ? 'true' : undefined}
               >
                 {item.label}
               </a>
@@ -178,9 +179,10 @@ export function DocsPage() {
             <p>
               视频翻译助手是本地优先的字幕与文稿工作台。顶栏可切换两条流水线：
               <strong>字幕</strong>
-              （导入 → 原文/ASR → 翻译 → 导出 SRT/ASS / 可选硬烧录）与
+              （导入 → 原文/ASR → 仅提取原文或翻译 → 导出字幕 / 可选硬烧录）与
               <strong>文稿</strong>
-              （导入音视频 → ASR → 整篇润色 → 导出 Markdown）。大部分处理发生在你的电脑上。
+              （导入音视频 → ASR → 整篇润色 → 导出
+              Markdown）。大部分处理发生在你的电脑上。
             </p>
             <div className="docs-callout">
               <HardDrive size={18} />
@@ -192,8 +194,9 @@ export function DocsPage() {
                   </li>
                   <li>
                     <strong>Ollama</strong>
-                    ：必需。批量<strong>翻译</strong>走本地 Ollama；可选在设置中用
-                    BYOK 仅做识别结果<strong>润色</strong>（不替代翻译）
+                    ：按需安装。仅提取原文时无需 Ollama；字幕
+                    <strong>翻译</strong>走本地 Ollama。设置中的 BYOK
+                    只用于可选润色，不替代字幕翻译
                   </li>
                   <li>
                     <strong>yt-dlp</strong>：可选。仅「在线链接」下载视频时需要
@@ -203,6 +206,16 @@ export function DocsPage() {
                     Python
                   </li>
                 </ul>
+              </div>
+            </div>
+            <div className="docs-callout docs-callout-soft">
+              <Check size={18} />
+              <div>
+                <strong>0.8.1 更新</strong>
+                <p>
+                  字幕翻译单段空结果会自动重试，仍为空则回退该段原文并写入日志，不再因偶发空译中断整条任务；Ollama
+                  服务或模型硬错误在重试耗尽后仍会终止并报告段落位置。
+                </p>
               </div>
             </div>
             <div className="docs-meta-grid">
@@ -237,27 +250,28 @@ export function DocsPage() {
             </h2>
             <ol className="docs-steps">
               <li>
-                使用上方下载按钮（自动匹配本机平台），或打开{" "}
+                使用上方下载按钮（自动匹配本机平台），或打开{' '}
                 <a href={releaseUrl} target="_blank" rel="noreferrer">
                   GitHub Releases
-                </a>{" "}
+                </a>{' '}
                 自选安装包（macOS arm64 / Windows x64 / Linux x64）。
               </li>
               <li>
-                每个平台有 <strong>bundled-ffmpeg</strong>（完整版）与{" "}
-                <strong>slim</strong>（精简版）两种（见下节）；不确定时选完整版。
+                每个平台有 <strong>bundled-ffmpeg</strong>（完整版）与{' '}
+                <strong>slim</strong>
+                （精简版）两种（见下节）；不确定时选完整版。
               </li>
               <li>
                 安装并启动。首次启动会跑<strong>系统依赖检查</strong>
                 ：缺什么会直接告诉你。
               </li>
               <li>
-                可选依赖（如 yt-dlp）缺失<strong>不会</strong>
-                挡住进入主界面——只影响在线链接下载。
+                可选依赖缺失<strong>不会</strong>
+                挡住进入主界面：Ollama 只影响翻译与本地润色，yt-dlp
+                只影响在线链接下载。
               </li>
               <li>
-                下载后建议用 Release 中的 <code>SHA256SUMS.txt</code>{" "}
-                校验文件。
+                下载后建议用 Release 中的 <code>SHA256SUMS.txt</code> 校验文件。
               </li>
             </ol>
           </section>
@@ -268,8 +282,8 @@ export function DocsPage() {
               bundled-ffmpeg 与 slim
             </h2>
             <p>
-              CI 为每个平台打两种包，区别只在于<strong>是否内置
-              FFmpeg</strong>。Ollama、yt-dlp 与 ASR 模型与此无关。
+              CI 为每个平台打两种包，区别只在于<strong>是否内置 FFmpeg</strong>
+              。Ollama、yt-dlp 与 ASR 模型不随这两种包提供。
             </p>
             <div className="docs-table-wrap">
               <table className="docs-table">
@@ -305,8 +319,7 @@ export function DocsPage() {
                       <code>-slim.</code>
                     </td>
                     <td>
-                      不内置 FFmpeg，使用系统 PATH（及 macOS Homebrew
-                      常见路径）
+                      不内置 FFmpeg，使用系统 PATH（及 macOS Homebrew 常见路径）
                     </td>
                     <td>本机已装完整 FFmpeg，或希望安装包更小</td>
                   </tr>
@@ -320,11 +333,11 @@ video-translate-vX.Y.Z-win-x64-bundled-ffmpeg.exe
 video-translate-vX.Y.Z-linux-x64-bundled-ffmpeg.AppImage`}
             </CodeBlock>
             <p className="docs-note">
-              选了 <strong>slim</strong> 就必须自行安装 FFmpeg（见下节）。硬字幕烧录需要带{" "}
-              <code>subtitles</code> 滤镜的完整构建。GitHub Release
+              选了 <strong>slim</strong> 就必须自行安装
+              FFmpeg（见下节）。硬字幕烧录需要带 <code>subtitles</code>{' '}
+              滤镜的完整构建。GitHub Release
               正文顶部会附带精简对照表，完整说明以本页为准。
             </p>
-
           </section>
 
           <section id="unsigned" className="docs-section">
@@ -340,7 +353,7 @@ video-translate-vX.Y.Z-linux-x64-bundled-ffmpeg.AppImage`}
 
             <h3>macOS</h3>
             <p>
-              浏览器下载会带隔离属性（quarantine）。若提示「已损坏」「无法打开」或无法验证开发者，对{" "}
+              浏览器下载会带隔离属性（quarantine）。若提示「已损坏」「无法打开」或无法验证开发者，对{' '}
               <code>.app</code> 执行：
             </p>
             <CodeBlock label="终端">
@@ -351,7 +364,8 @@ video-translate-vX.Y.Z-linux-x64-bundled-ffmpeg.AppImage`}
 # sudo xattr -cr "/path/to/视频翻译助手.app"`}
             </CodeBlock>
             <p className="docs-note">
-              也可在「系统设置 → 隐私与安全性」中对拦截提示选择仍要打开（视系统版本而定）。
+              也可在「系统设置 →
+              隐私与安全性」中对拦截提示选择仍要打开（视系统版本而定）。
             </p>
 
             <h3>Windows</h3>
@@ -375,9 +389,10 @@ video-translate-vX.Y.Z-linux-x64-bundled-ffmpeg.AppImage`}
 ./video-translate-vX.Y.Z-linux-x64-*.AppImage`}
             </CodeBlock>
             <p>
-              deb / rpm / pacman 包未做发行版仓库签名，请用本地包管理器安装，并与{" "}
-              <code>SHA256SUMS.txt</code>{" "}
-              核对。部分环境运行 AppImage 可能需要 FUSE。
+              deb / rpm / pacman
+              包未做发行版仓库签名，请用本地包管理器安装，并与{' '}
+              <code>SHA256SUMS.txt</code> 核对。部分环境运行 AppImage 可能需要
+              FUSE。
             </p>
           </section>
 
@@ -387,12 +402,11 @@ video-translate-vX.Y.Z-linux-x64-bundled-ffmpeg.AppImage`}
               安装 FFmpeg
             </h2>
             <p>
-              FFmpeg 负责音频提取、分段，以及硬字幕烧录。应用会在 PATH 中查找{" "}
+              FFmpeg 负责音频提取、分段，以及硬字幕烧录。应用会在 PATH 中查找{' '}
               <code>ffmpeg</code> / <code>ffprobe</code>
               。在 macOS 图形启动时 PATH 可能不含 Homebrew，应用会额外尝试
-              Homebrew keg 路径。使用{" "}
-              <strong>bundled-ffmpeg</strong> 包时一般无需本机再装
-              FFmpeg；<strong>slim</strong> 包必须安装。
+              Homebrew keg 路径。使用 <strong>bundled-ffmpeg</strong>{' '}
+              包时一般无需本机再装 FFmpeg；<strong>slim</strong> 包必须安装。
             </p>
             <PlatformTabs
               mac={`# 基础安装
@@ -432,11 +446,12 @@ sudo dnf install ffmpeg`}
           <section id="ollama" className="docs-section">
             <h2>
               <Languages size={22} />
-              安装 Ollama
+              安装 Ollama（翻译 / 本地润色）
             </h2>
             <p>
-              默认通过本机 Ollama 做批量翻译。安装后需保证服务在运行（菜单栏 App
-              或 <code>ollama serve</code>），默认 API 地址为{" "}
+              字幕翻译默认通过本机 Ollama
+              完成；仅提取原文时可以跳过本节。需要翻译或使用本地模型润色时，安装后需保证服务在运行（菜单栏
+              App 或 <code>ollama serve</code>），默认 API 地址为{' '}
               <code>http://127.0.0.1:11434</code>。
             </p>
             <PlatformTabs
@@ -480,11 +495,13 @@ ollama list`}
               <div>
                 <strong>BYOK 是什么？</strong>
                 <p>
-                  设置里的「在线 BYOK」只用于可选步骤：识别结果先<strong>润色</strong>再翻译（校对错字、补标点，不翻译语言）。兼容
-                  OpenAI 的 Base URL + API Key + 模型 ID。
+                  设置里的「在线 BYOK」只用于可选步骤：识别结果先
+                  <strong>润色</strong>
+                  再翻译（校对错字、补标点，不翻译语言）。兼容 OpenAI 的 Base
+                  URL + API Key + 模型 ID。
                   <strong>正式翻译仍由本机 Ollama 完成</strong>
-                  ，目前不能用 BYOK 替代 Ollama 做整段翻译。FFmpeg /
-                  ASR / 字幕生成也始终在本地。
+                  ，目前不能用 BYOK 替代 Ollama 做整段翻译。FFmpeg / ASR /
+                  字幕生成也始终在本地。
                 </p>
               </div>
             </div>
@@ -569,7 +586,7 @@ pip install -U yt-dlp
               </table>
             </div>
             <p className="docs-note">
-              若自动下载失败，检查网络后在应用内点「重新检查」。也可通过环境变量{" "}
+              若自动下载失败，检查网络后在应用内点「重新检查」。也可通过环境变量{' '}
               <code>VIDEO_TRANSLATE_ASR_MODELS</code> 指定模型目录。
             </p>
           </section>
@@ -583,8 +600,11 @@ pip install -U yt-dlp
             <h3>1. 启动与自检</h3>
             <ol className="docs-steps">
               <li>打开应用，等待系统依赖检查完成。</li>
-              <li>若 FFmpeg / Ollama 缺失，按提示安装后点「重新检查」。</li>
-              <li>进入主界面后，可在设置中确认翻译模型与目标语言。</li>
+              <li>若必需依赖缺失，按提示安装后点「重新检查」。</li>
+              <li>
+                只提取原文可不安装
+                Ollama；需要翻译时再在设置中确认模型与目标语言。
+              </li>
             </ol>
 
             <h3>2. 选择工作流并导入素材</h3>
@@ -616,15 +636,19 @@ pip install -U yt-dlp
                 ：有平台字幕 → 直接用；没有 → FFmpeg 抽音频 + SenseVoice 识别。
               </li>
               <li>
-                <strong>翻译</strong>：Ollama
-                批量翻译；若开启润色，则先用 Ollama 或 BYOK 校对原文，再翻译。
+                <strong>选择处理方式</strong>
+                ：「仅提取原文」只生成原文 SRT，无需
+                Ollama；「翻译字幕」可先润色原文，再由 Ollama 翻译。
               </li>
               <li>
-                <strong>导出</strong>：生成 SRT / ASS 等字幕文件。
+                <strong>导出</strong>
+                ：翻译模式生成原文、译文、双语 SRT 与 ASS；仅原文模式生成原文
+                SRT。文件名使用实际识别语言，已有同名文件不会被覆盖。
               </li>
               <li>
-                <strong>可选</strong>：烧录双语硬字幕到视频（需带 libass 的
-                FFmpeg）。
+                <strong>可选</strong>
+                ：创建任务时选择烧录内容。翻译模式支持原文、译文或双语，原文模式烧录原文（需带
+                libass 的 FFmpeg）。
               </li>
             </ol>
 
@@ -639,8 +663,7 @@ pip install -U yt-dlp
                 ：用设置中的润色模型（Ollama 或 BYOK）整理为结构化 Markdown。
               </li>
               <li>
-                <strong>导出与预览</strong>：写入本机{' '}
-                <code>.md</code>
+                <strong>导出与预览</strong>：写入本机 <code>.md</code>
                 ；任务右下角「预览」可全屏阅读，也可复制或打开文件。
               </li>
             </ol>
@@ -651,9 +674,17 @@ pip install -U yt-dlp
 
             <h3>5. 任务与结果</h3>
             <ul className="docs-list">
-              <li>在对应工作流的任务列表查看进度、日志；支持暂停 / 恢复。</li>
+              <li>
+                在对应工作流的任务列表查看进度、日志、本地创建时间与处理耗时；支持暂停
+                / 恢复。
+              </li>
               <li>字幕完成：打开字幕或结果文件夹；可补烧硬字幕。</li>
-              <li>文稿完成：全屏预览 Markdown、复制、打开 .md 或结果文件夹。</li>
+              <li>
+                文稿完成：全屏预览 Markdown、复制、打开 .md 或结果文件夹。
+              </li>
+              <li>
+                完成、失败或取消的任务可批量删除；只清理任务记录与应用缓存，源文件和结果文件保留。
+              </li>
               <li>临时音频等中间文件会在流程结束后清理。</li>
             </ul>
 
@@ -661,8 +692,11 @@ pip install -U yt-dlp
             <ul className="docs-list">
               <li>ASR 引擎（SenseVoice / Fun-ASR-Nano）</li>
               <li>源语言 / 目标语言（字幕线）</li>
-              <li>Ollama 翻译模型；润色模型（字幕段润色与文稿整篇共用配置入口）</li>
-              <li>硬字幕样式：仅原文 / 仅译文 / 双语堆叠与颜色</li>
+              <li>字幕与烧录视频的输出位置：output 子目录或源视频同目录</li>
+              <li>
+                Ollama 翻译模型；润色模型（字幕段润色与文稿整篇共用配置入口）
+              </li>
+              <li>原文 / 译文字幕颜色；烧录内容在创建字幕任务时选择</li>
             </ul>
           </section>
 
@@ -673,14 +707,14 @@ pip install -U yt-dlp
                 <summary>该下 bundled-ffmpeg 还是 slim？</summary>
                 <p>
                   多数用户选 <strong>bundled-ffmpeg</strong>
-                  （内置 FFmpeg）。本机已装完整 FFmpeg 且希望包更小时选{" "}
+                  （内置 FFmpeg）。本机已装完整 FFmpeg 且希望包更小时选{' '}
                   <strong>slim</strong>。详见上文「bundled-ffmpeg 与 slim」。
                 </p>
               </details>
               <details>
                 <summary>macOS / Windows 打不开或被系统拦截？</summary>
                 <p>
-                  CI 包未签名。macOS 对 <code>.app</code> 执行{" "}
+                  CI 包未签名。macOS 对 <code>.app</code> 执行{' '}
                   <code>xattr -cr</code>；Windows 在 SmartScreen 选「更多信息 →
                   仍要运行」。详见「非签名包注意事项」。
                 </p>
@@ -688,26 +722,28 @@ pip install -U yt-dlp
               <details>
                 <summary>提示找不到 ffmpeg / ffprobe？</summary>
                 <p>
-                  若使用 <strong>slim</strong>：确认终端里{" "}
-                  <code>ffmpeg -version</code> 可用。macOS 从 Dock
-                  启动时 PATH 可能不含 Homebrew，可装{" "}
-                  <code>ffmpeg-full</code> 或改用{" "}
-                  <strong>bundled-ffmpeg</strong> 包。若已是 bundled 仍失败，请反馈版本与日志。
+                  若使用 <strong>slim</strong>：确认终端里{' '}
+                  <code>ffmpeg -version</code> 可用。macOS 从 Dock 启动时 PATH
+                  可能不含 Homebrew，可装 <code>ffmpeg-full</code> 或改用{' '}
+                  <strong>bundled-ffmpeg</strong> 包。若已是 bundled
+                  仍失败，请反馈版本与日志。
                 </p>
               </details>
               <details>
                 <summary>翻译失败或 Ollama 不可用？</summary>
                 <p>
-                  翻译依赖本机 Ollama，BYOK 不能代替。请确认托盘/菜单栏
-                  Ollama 已运行，执行 <code>ollama list</code>{" "}
-                  能列出模型；未拉取默认模型时执行{" "}
-                  <code>ollama pull kaelri/hy-mt2:1.8b</code>。
+                  翻译依赖本机 Ollama，BYOK 不能代替。请确认托盘/菜单栏 Ollama
+                  已运行，执行 <code>ollama list</code>{' '}
+                  能列出模型；未拉取默认模型时执行{' '}
+                  <code>ollama pull kaelri/hy-mt2:1.8b</code>
+                  。如果只需要原文 SRT，创建任务时选择「仅提取原文」即可跳过
+                  Ollama。
                 </p>
               </details>
               <details>
                 <summary>在线链接下载失败？</summary>
                 <p>
-                  安装或升级 yt-dlp（<code>pip install -U yt-dlp</code> 或{" "}
+                  安装或升级 yt-dlp（<code>pip install -U yt-dlp</code> 或{' '}
                   <code>brew upgrade yt-dlp</code>
                   ）。部分站点需要更新的 yt-dlp 版本；仅本地文件可忽略此依赖。
                 </p>
@@ -715,7 +751,7 @@ pip install -U yt-dlp
               <details>
                 <summary>硬字幕烧录失败？</summary>
                 <p>
-                  当前 FFmpeg 可能不含 libass。macOS 可试{" "}
+                  当前 FFmpeg 可能不含 libass。macOS 可试{' '}
                   <code>brew install ffmpeg-full</code>
                   ；Linux 确保安装了 <code>libass</code> 相关包；Windows
                   使用完整构建而非精简版。
@@ -724,7 +760,7 @@ pip install -U yt-dlp
               <details>
                 <summary>SenseVoice 模型一直下不下来？</summary>
                 <p>
-                  检查网络与磁盘空间，在依赖检查界面重试。仍失败时查看任务/系统日志中的下载错误，或手动按仓库{" "}
+                  检查网络与磁盘空间，在依赖检查界面重试。仍失败时查看任务/系统日志中的下载错误，或手动按仓库{' '}
                   <code>apps/desktop/models/asr/README.md</code> 准备模型目录。
                 </p>
               </details>
@@ -744,5 +780,5 @@ pip install -U yt-dlp
 
       <SiteFooter />
     </main>
-  );
+  )
 }

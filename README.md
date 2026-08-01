@@ -1,10 +1,10 @@
 # 视频翻译助手 🎬
 
-基于 **sherpa-onnx（SenseVoice / Fun-ASR-Nano）+ Ollama + Electron** 的本地优先桌面工具：一条流水线做**视频字幕翻译**，另一条把音视频整理成 **Markdown 文稿**。仓库使用 pnpm Workspace 与 Turborepo 管理桌面应用和产品官网。
+基于 **sherpa-onnx（SenseVoice / Fun-ASR-Nano）+ Electron** 的本地优先桌面工具：可从视频提取原文字幕、通过 Ollama 翻译字幕，或把音视频整理成 **Markdown 文稿**。仓库使用 pnpm Workspace 与 Turborepo 管理桌面应用和产品官网。
 
 **产品官网（GitHub Pages）：** [https://cl1107.github.io/video-translate/](https://cl1107.github.io/video-translate/)
 
-![视频翻译助手](https://img.shields.io/badge/version-0.8.0-blue.svg)
+![视频翻译助手](https://img.shields.io/badge/version-0.8.1-blue.svg)
 ![平台支持](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Pages](https://img.shields.io/badge/GitHub%20Pages-live-success.svg)
@@ -16,13 +16,30 @@
 - 🔗 **在线链接** - 粘贴 YouTube / B 站等链接，经 yt-dlp 下载后进入对应流水线
 - 📝 **平台字幕优先** - 有站内人工/自动字幕时直接采用，跳过 ASR；无字幕再本地识别
 - 🎯 **高精度识别** - 基于 sherpa-onnx，默认 SenseVoice Small（中/英/日/韩/粤）
+- 📃 **仅提取原文** - 只生成原文 SRT，可选烧录原文字幕，全程无需 Ollama
 - 🌍 **多语言翻译** - 字幕线通过本地 Ollama 翻译；可选 BYOK 润色识别原文
 - 📄 **Markdown 文稿** - 文稿线整篇 AI 润色为结构化 MD，全屏预览 / 复制 / 导出
 - ⚡ **智能处理** - 自动音频提取、分段识别与进度回调
 - 🎨 **现代界面** - React 19 + TailwindCSS 4 + Base UI，支持暗黑模式
-- 📁 **多格式输出** - SRT / ASS 字幕、可选硬字幕烧录；文稿输出 `.md`
-- 🔄 **任务管理** - 进度跟踪、暂停/恢复、处理日志
-- 🛠️ **系统依赖自检** - 启动时检测 FFmpeg / Ollama / ASR 模型，缺失 SenseVoice 时自动下载
+- 📁 **多格式输出** - 原文 / 译文 / 双语 SRT、ASS 与可选硬字幕；输出到 `output` 或源视频同目录
+- 🔄 **任务管理** - 进度、日志、本地时间与处理耗时；支持暂停/恢复和批量删除已结束任务
+- 🛠️ **系统依赖自检** - 启动时检测 FFmpeg、可选 Ollama 与 ASR 模型，缺失 SenseVoice 时自动下载
+
+## 🆕 0.8.1 更新
+
+- 字幕翻译单段空结果会自动重试；仍为空时回退该段原文，不再因偶发空译中断整条任务。
+- 重试、回退与失败段会写入处理日志（含原文预览），完成时汇总回退段数。
+- Ollama 服务/模型硬错误仍会在重试耗尽后终止任务并报告段落位置。
+
+## 0.8.0 更新
+
+- 字幕任务可在「翻译字幕」与「仅提取原文」之间选择；仅原文模式不启动润色和翻译。
+- 设置中可选择字幕与烧录视频的保存位置：素材旁的 `output` 子目录（默认）或源视频同目录。文稿仍写入 `output`。
+- 原文字幕按 ASR 或平台字幕实际检测出的语言命名；同名产物使用递增编号，已有结果不会被覆盖。
+- 字幕与文稿任务列表支持批量删除完成、失败或取消的任务。该操作保留源文件和结果文件。
+- 任务卡展示本地创建时间与实际处理耗时；旧任务结果目录仍可正常打开。
+- 持久化设置损坏时自动恢复默认值并提示重新确认。
+- 项目包管理器升级到 pnpm 11，当前固定版本为 `11.17.0`。
 
 ## 🖼️ 界面预览
 
@@ -30,13 +47,14 @@
 
 - **工作流切换**: 字幕 / 文稿（次级入口，靠品牌区）
 - **添加 / 任务**: 当前工作流内的导入与任务列表
-- **设置页面**: ASR 引擎、Ollama 翻译/润色模型、语言与硬字幕选项
+- **设置页面**: ASR 引擎、Ollama 翻译/润色模型、语言、字幕颜色与输出位置
 
 ### 字幕工作流
 
 1. 📹 **本地上传** 或 🔗 **在线链接（yt-dlp）**
 2. 🗣️ **平台字幕** 或 **ASR 识别**
-3. 🌐 **可选润色 + 翻译** → 📝 **字幕导出**（可选硬字幕烧录）
+3. 🧭 **仅提取原文**（无需 Ollama）或 **可选润色 + Ollama 翻译**
+4. 📝 **字幕导出**（可选原文 / 译文 / 双语硬字幕烧录）
 
 ### 文稿工作流
 
@@ -49,6 +67,7 @@
 ### 系统要求
 
 - Node.js 22.13+
+- pnpm 11+（仓库固定 `pnpm@11.17.0`）
 - 8GB+ 内存
 - 10GB+ 硬盘空间（含模型）
 
@@ -56,7 +75,7 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-username/video-translate.git
+git clone https://github.com/cl1107/video-translate.git
 cd video-translate
 
 # 安装 Node.js 依赖
@@ -88,6 +107,8 @@ sudo apt install ffmpeg libass9
 > - 硬字幕烧录依赖 FFmpeg 的 `subtitles` 滤镜（libass）。精简版 FFmpeg 可能不可用，此时请安装完整构建。
 
 #### Ollama
+
+仅提取原文字幕时无需安装 Ollama。字幕翻译必须使用 Ollama；字幕润色与文稿整理可按配置使用 Ollama 或 BYOK。
 
 ```bash
 # macOS / Linux
@@ -130,6 +151,8 @@ export VIDEO_TRANSLATE_ASR_MODELS=/path/to/models/asr
 
 #### Ollama 翻译模型
 
+只使用「仅提取原文」可跳过本节。
+
 ```bash
 # 默认模型（与应用设置一致）
 ollama pull kaelri/hy-mt2:1.8b
@@ -154,7 +177,7 @@ ollama pull kaelri/hy-mt2:1.8b
 - **SQLite (better-sqlite3)** - 本地任务与日志存储
 - **FFmpeg** - 音频提取、分段、可选硬字幕烧录
 - **sherpa-onnx-node** - 本地 ASR（SenseVoice / Fun-ASR-Nano）
-- **Ollama** - 本地大语言模型（翻译 + 润色）；可选 BYOK OpenAI 兼容接口
+- **Ollama** - 按需使用的本地大语言模型（字幕翻译 + 润色）；可选 BYOK OpenAI 兼容接口用于润色
 
 ### 核心服务
 
@@ -176,10 +199,13 @@ ollama pull kaelri/hy-mt2:1.8b
 2. **源文获取**（二选一）
    - **平台字幕优先**：解析站内人工/自动字幕，跳过音频提取与 ASR
    - **否则 ASR**：FFmpeg 抽音轨 → sherpa-onnx 转录
-3. **文本润色（可选）** → 本地 Ollama 或在线 BYOK；**翻译** → 本地 Ollama
-4. **字幕生成** → 输出 SRT / ASS 等
-5. **可选** → 硬字幕烧录到视频（需支持 libass 的 FFmpeg）
-6. **清理** → 删除临时文件并完成任务
+3. **选择处理方式**
+   - **仅提取原文**：跳过润色与翻译，只生成原文 SRT，无需 Ollama
+   - **翻译字幕**：文本润色（可选，本地 Ollama 或在线 BYOK）→ 本地 Ollama 翻译
+4. **字幕生成** → 仅原文模式输出原文 SRT；翻译模式输出原文 / 译文 / 双语 SRT 与 ASS
+5. **可选** → 烧录原文、译文或双语硬字幕到视频（需支持 libass 的 FFmpeg）
+6. **写入产物** → 默认保存到 `{素材旁}/output/`，也可在设置中改为源视频同目录；实际语言进入文件名且避免覆盖
+7. **清理** → 删除临时文件并完成任务
 
 ### 文稿流水线
 
@@ -273,7 +299,7 @@ pnpm --filter video-translate rebuild:native
 - ✅ **离线优先** - 识别、翻译与文稿润色默认可在本地完成
 - ✅ **本地存储** - 任务、日志与产物保存在本机
 - ✅ **沙盒隔离** - 遵循 Electron 安全实践
-- ✅ **无云端上传** - 视频文件不上传到第三方云服务（除本地 Ollama / 可选 BYOK / 首次下载 ASR 模型外）
+- ✅ **素材不上云** - 本地视频文件不会上传到第三方服务；启用 BYOK 润色时只发送待润色文本，首次使用 ASR 时会下载模型
 
 ## 📦 发布包说明
 
@@ -296,7 +322,7 @@ video-translate-vX.Y.Z-linux-x64-bundled-ffmpeg.AppImage
 说明：
 
 - **slim** 仍需自行安装 FFmpeg；硬字幕烧录需要带 `subtitles` 滤镜（libass）的完整构建。
-- **Ollama**（默认翻译）与 **yt-dlp**（仅在线链接，可选）与 bundled / slim 无关，按应用内依赖检查提示安装即可。
+- **Ollama**（翻译 / 本地润色，按需）与 **yt-dlp**（仅在线链接，可选）与 bundled / slim 无关，按应用内依赖检查提示安装即可。
 - 每个 Release 附带 `SHA256SUMS.txt`，下载后请校验完整性。
 - 官网文档：https://cl1107.github.io/video-translate/docs
   每个 Release 正文顶部会附带精简的包类型说明（由 `scripts/release-notes-preamble.md` 生成），完整安装与依赖说明见官网文档。
@@ -413,8 +439,8 @@ pip install -U yt-dlp
 
 有问题或建议？欢迎：
 
-- 提交 [Issue](https://github.com/your-username/video-translate/issues)
-- 发起 [Discussion](https://github.com/your-username/video-translate/discussions)
+- 提交 [Issue](https://github.com/cl1107/video-translate/issues)
+- 发起 [Discussion](https://github.com/cl1107/video-translate/discussions)
 
 ---
 

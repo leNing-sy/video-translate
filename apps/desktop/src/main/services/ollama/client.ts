@@ -3,7 +3,10 @@ import { DEFAULT_OLLAMA_MODEL } from '../../../shared/constants'
 import type { OllamaModel } from '../../../shared/types/video'
 import { resolveCommandPath } from '../../utils/command-path'
 import { OllamaCompletionAdapter } from '../llm/ollama-completion-adapter'
-import { translateTextBatch } from '../llm/text-transform'
+import {
+  type TranslateBatchOptions,
+  translateTextBatch,
+} from '../llm/text-transform'
 
 // 使用动态导入来处理 node-fetch ES 模块
 let fetch: any
@@ -314,6 +317,7 @@ export class OllamaClient {
 
   /**
    * 批量翻译：经 OllamaCompletionAdapter → translateTextBatch。
+   * 空结果会单段重试后回退原文；服务错误在重试耗尽后终止整批。
    */
   async translateBatch(
     texts: string[],
@@ -321,7 +325,8 @@ export class OllamaClient {
     targetLanguage: string,
     model = DEFAULT_OLLAMA_MODEL,
     onProgress?: (completed: number, total: number) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onSegmentIssue?: TranslateBatchOptions['onSegmentIssue']
   ): Promise<string[]> {
     const resolvedModel = model || DEFAULT_OLLAMA_MODEL
     const client = new OllamaCompletionAdapter(this, resolvedModel)
@@ -331,6 +336,7 @@ export class OllamaClient {
       client,
       onProgress,
       signal,
+      onSegmentIssue,
     })
   }
 }
