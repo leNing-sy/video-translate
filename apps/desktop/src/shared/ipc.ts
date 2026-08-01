@@ -20,6 +20,7 @@ export const IpcChannels = {
   // 文件 / 上传
   openFileDialog: 'open-file-dialog',
   openTaskArtifact: 'open-task-artifact',
+  openOnlineTranslation: 'open-online-translation',
   uploadFiles: 'upload-files',
   /** 从在线视频链接创建任务（yt-dlp 下载后走对应流水线） */
   createTasksFromUrls: 'create-tasks-from-urls',

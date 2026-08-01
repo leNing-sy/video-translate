@@ -3,7 +3,9 @@ import { makeAppWithSingleInstanceLock } from 'lib/electron-app/factories/app/in
 import { makeAppSetup } from 'lib/electron-app/factories/app/setup'
 import { IpcChannels } from '../shared/ipc'
 import {
+  normalizeOnlineTranslationSite,
   normalizeTaskCreationSettings,
+  ONLINE_TRANSLATION_SITES,
   type SubtitleBurnMode,
 } from '../shared/settings'
 import { normalizeTaskKind, type TaskKind } from '../shared/types/video'
@@ -342,6 +344,46 @@ function setupIpcHandlers() {
 
       const error = await shell.openPath(artifactPath)
       return error ? { success: false, error } : { success: true }
+    }
+  )
+
+  ipcMain.handle(
+    IpcChannels.openOnlineTranslation,
+    async (_event, taskIdRaw: unknown, siteRaw?: unknown) => {
+      try {
+        if (typeof taskIdRaw !== 'string' || !taskIdRaw.trim()) {
+          return { success: false, error: '任务 ID 无效' }
+        }
+
+        const task = taskManager.getTask(taskIdRaw)
+        if (!task) return { success: false, error: '任务不存在' }
+        if (normalizeTaskKind(task.kind) !== 'subtitle') {
+          return { success: false, error: '在线翻译仅适用于字幕任务' }
+        }
+
+        const outputDirectory = task.outputArtifacts?.outputDirectory
+        if (!outputDirectory) {
+          return { success: false, error: '字幕结果目录不存在' }
+        }
+
+        const siteId = normalizeOnlineTranslationSite(
+          typeof siteRaw === 'string' ? siteRaw : undefined
+        )
+        const site = ONLINE_TRANSLATION_SITES.find(item => item.id === siteId)
+        if (!site) return { success: false, error: '在线翻译网站无效' }
+
+        const [directoryError] = await Promise.all([
+          shell.openPath(outputDirectory),
+          shell.openExternal(site.url),
+        ])
+        return directoryError
+          ? { success: false, error: directoryError }
+          : { success: true }
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error)
+        return { success: false, error: errorMessage }
+      }
     }
   )
 

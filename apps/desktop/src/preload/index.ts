@@ -6,7 +6,11 @@ import {
   type DeleteTasksResult,
   type FileDialogMedia,
 } from '../shared/ipc'
-import type { SubtitleBurnMode, TaskCreationSettings } from '../shared/settings'
+import type {
+  OnlineTranslationSiteId,
+  SubtitleBurnMode,
+  TaskCreationSettings,
+} from '../shared/settings'
 import type { SystemCheckProgress } from '../shared/system-check'
 import type {
   OllamaModel,
@@ -27,6 +31,10 @@ declare global {
       openTaskArtifact: (
         taskId: string,
         kind: ArtifactKind
+      ) => Promise<{ success: boolean; error?: string }>
+      openOnlineTranslation: (
+        taskId: string,
+        site?: OnlineTranslationSiteId
       ) => Promise<{ success: boolean; error?: string }>
       uploadFiles: (
         filePaths: string[],
@@ -172,6 +180,8 @@ const api = {
   },
   openTaskArtifact: (taskId: string, kind: ArtifactKind) =>
     ipcRenderer.invoke(IpcChannels.openTaskArtifact, taskId, kind),
+  openOnlineTranslation: (taskId: string, site?: OnlineTranslationSiteId) =>
+    ipcRenderer.invoke(IpcChannels.openOnlineTranslation, taskId, site),
   uploadFiles: (
     filePaths: string[],
     settings: TaskCreationSettings | Partial<TaskCreationSettings>,
