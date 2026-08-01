@@ -1,0 +1,60 @@
+name: 新版二开 Windows 精简版
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-use-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-build:
+    name: 检查并构建 Windows x64 精简版
+    runs-on: windows-2025
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Set up pnpm
+        run: npm install --global pnpm@11.17.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Check types
+        run: pnpm typecheck
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Build unsigned Windows slim package
+        env:
+          BUNDLE_FFMPEG: '0'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          UNSIGNED_BUILD: '1'
+        run: pnpm --filter video-translate run build:ci
+
+      - name: Upload Windows slim package
+        uses: actions/upload-artifact@v6
+        with:
+          name: video-translate-next-windows-x64-slim-${{ github.run_number }}
+          path: |
+            apps/desktop/dist/v*/video-translate-v*
+            !apps/desktop/dist/v*/*.blockmap
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
