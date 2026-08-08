@@ -1,19 +1,55 @@
-import { constants, accessSync, existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import {
+  constants,
+  accessSync,
+  existsSync,
+  readdirSync,
+} from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
 const HOMEBREW_MEDIA_COMMANDS = new Set(['ffmpeg', 'ffprobe'])
 const BUNDLED_MEDIA_COMMANDS = new Set(['ffmpeg', 'ffprobe'])
+const DEFAULT_WINDOWS_PATHEXT = '.COM;.EXE;.BAT;.CMD'
 
 let pathAugmented = false
 
-function isExecutable(filePath: string): boolean {
+function isExecutable(
+  filePath: string,
+  platform = process.platform
+): boolean {
   try {
+    if (platform === 'win32') {
+      return existsSync(filePath)
+    }
     accessSync(filePath, constants.X_OK)
     return true
   } catch {
     return false
   }
+}
+
+export function getCommandCandidates(
+  command: string,
+  platform = process.platform,
+  pathExt = process.env.PATHEXT
+): string[] {
+  if (platform !== 'win32' || path.extname(command)) return [command]
+
+  const extensions = (pathExt || DEFAULT_WINDOWS_PATHEXT)
+    .split(';')
+    .map(extension => extension.trim())
+    .filter(Boolean)
+    .map(extension =>
+      extension.startsWith('.') ? extension : `.${extension}`
+    )
+
+  const candidates = [command, ...extensions.map(ext => `${command}${ext}`)]
+  return [
+    ...new Map(
+      candidates.map(candidate => [candidate.toLowerCase(), candidate])
+    ).values(),
+  ]
 }
 
 /**
@@ -37,20 +73,26 @@ export function resolveBundledMediaCommandPath(
 
   const executable = platform === 'win32' ? `${command}.exe` : command
   const candidate = path.join(resourcesPath, 'ffmpeg', executable)
-  return isExecutable(candidate) ? candidate : undefined
+  return isExecutable(candidate, platform) ? candidate : undefined
 }
 
 function findInPath(
   command: string,
-  pathValue = process.env.PATH
+  pathValue = process.env.PATH,
+  platform = process.platform,
+  pathExt = process.env.PATHEXT
 ): string | undefined {
   if (!pathValue) return undefined
 
+  const candidates = getCommandCandidates(command, platform, pathExt)
   for (const directory of pathValue.split(path.delimiter)) {
-    if (!directory) continue
+    const normalizedDirectory = directory.trim()
+    if (!normalizedDirectory || normalizedDirectory === '%PATH%') continue
 
-    const candidate = path.join(directory, command)
-    if (isExecutable(candidate)) return candidate
+    for (const candidateName of candidates) {
+      const candidate = path.join(normalizedDirectory, candidateName)
+      if (isExecutable(candidate, platform)) return candidate
+    }
   }
 
   return undefined
@@ -69,41 +111,189 @@ function getHomeDirectory(): string {
   return os.homedir()
 }
 
+function uniquePaths(paths: string[]): string[] {
+  const seen = new Set<string>()
+  const unique: string[] = []
+
+  for (const value of paths) {
+    const normalized = value.trim()
+    if (!normalized || normalized === '%PATH%') continue
+    const key =
+      process.platform === 'win32' ? normalized.toLowerCase() : normalized
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(normalized)
+  }
+
+  return unique
+}
+
+function getWindowsEnvironmentPaths(): string[] {
+  if (process.platform !== 'win32') return []
+
+  try {
+    const systemRoot = process.env.SystemRoot || 'C:\\Windows'
+    const bundledPowerShell = path.join(
+      systemRoot,
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe'
+    )
+    const powershell = existsSync(bundledPowerShell)
+      ? bundledPowerShell
+      : 'powershell.exe'
+    const script = [
+      "[Environment]::GetEnvironmentVariable('Path','Machine')",
+      "[Environment]::GetEnvironmentVariable('Path','User')",
+    ].join('; ')
+
+    const output = execFileSync(
+      powershell,
+      ['-NoProfile', '-NonInteractive', '-Command', script],
+      {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 5000,
+      }
+    )
+
+    return output
+      .split(/\r?\n/)
+      .flatMap(value => value.split(path.delimiter))
+  } catch {
+    return []
+  }
+}
+
+export function getWindowsBinaryDirectoryCandidates(
+  env: NodeJS.ProcessEnv = process.env,
+  home = getHomeDirectory()
+): string[] {
+  if (process.platform !== 'win32') return []
+
+  const directories = [
+    env.ProgramFiles && path.join(env.ProgramFiles, 'ffmpeg', 'bin'),
+    env['ProgramFiles(x86)'] &&
+      path.join(env['ProgramFiles(x86)'], 'ffmpeg', 'bin'),
+    path.join(home, 'scoop', 'shims'),
+    env.LOCALAPPDATA &&
+      path.join(env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Links'),
+    'C:\\ffmpeg\\bin',
+    'C:\\tools\\ffmpeg\\bin',
+  ]
+
+  return uniquePaths(
+    directories.filter((value): value is string => Boolean(value))
+  )
+}
+
+function getWinGetPackageBinDirectories(): string[] {
+  if (process.platform !== 'win32') return []
+
+  const roots = uniquePaths(
+    [
+      process.env.LOCALAPPDATA &&
+        path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Packages'),
+      path.join(
+        getHomeDirectory(),
+        'AppData',
+        'Local',
+        'Microsoft',
+        'WinGet',
+        'Packages'
+      ),
+      process.env.ProgramFiles &&
+        path.join(process.env.ProgramFiles, 'WinGet', 'Packages'),
+    ].filter((value): value is string => Boolean(value))
+  )
+  const directories: string[] = []
+
+  for (const root of roots) {
+    if (!existsSync(root)) continue
+
+    try {
+      for (const packageEntry of readdirSync(root, { withFileTypes: true })) {
+        if (!packageEntry.isDirectory()) continue
+
+        const packageDirectory = path.join(root, packageEntry.name)
+        const directBin = path.join(packageDirectory, 'bin')
+        if (
+          existsSync(path.join(directBin, 'ffmpeg.exe')) ||
+          existsSync(path.join(directBin, 'ffprobe.exe'))
+        ) {
+          directories.push(directBin)
+        }
+
+        try {
+          for (const childEntry of readdirSync(packageDirectory, {
+            withFileTypes: true,
+          })) {
+            if (!childEntry.isDirectory()) continue
+            const nestedBin = path.join(
+              packageDirectory,
+              childEntry.name,
+              'bin'
+            )
+            if (
+              existsSync(path.join(nestedBin, 'ffmpeg.exe')) ||
+              existsSync(path.join(nestedBin, 'ffprobe.exe'))
+            ) {
+              directories.push(nestedBin)
+            }
+          }
+        } catch {
+          // 单个 WinGet 包不可读时继续检查其他包。
+        }
+      }
+    } catch {
+      // WinGet 根目录不可读时回退到其他候选路径。
+    }
+  }
+
+  return uniquePaths(directories)
+}
+
 /**
- * 图形应用启动时 PATH 往往只有 /usr/bin:/bin，不包含 Homebrew / 用户本地安装目录。
+ * 图形应用启动时 PATH 往往缺少用户安装目录。
  * 这里返回应补充进 process.env.PATH 的常见可执行目录。
  */
 export function getCommonBinaryDirectories(): string[] {
   const home = getHomeDirectory()
   const directories: string[] = []
 
-  for (const prefix of getHomebrewPrefixes()) {
-    directories.push(path.join(prefix, 'bin'))
-    directories.push(path.join(prefix, 'sbin'))
+  if (process.platform === 'win32') {
+    directories.push(
+      ...getWindowsBinaryDirectoryCandidates(process.env, home),
+      ...getWinGetPackageBinDirectories()
+    )
+  } else {
+    for (const prefix of getHomebrewPrefixes()) {
+      directories.push(path.join(prefix, 'bin'))
+      directories.push(path.join(prefix, 'sbin'))
+    }
+
+    directories.push(
+      '/usr/local/bin',
+      '/usr/local/sbin',
+      path.join(home, '.local', 'bin'),
+      path.join(home, 'bin'),
+      path.join(home, '.volta', 'bin'),
+      path.join(home, '.fnm', 'current', 'bin'),
+      path.join(home, '.nvm', 'current', 'bin'),
+      path.join(home, '.asdf', 'shims'),
+      path.join(home, '.local', 'share', 'mise', 'shims'),
+      path.join(home, '.bun', 'bin'),
+      path.join(home, '.deno', 'bin'),
+      path.join(home, 'Library', 'pnpm')
+    )
+
+    if (process.platform === 'darwin') {
+      directories.push('/Applications/Ollama.app/Contents/Resources')
+    }
   }
 
-  directories.push(
-    '/usr/local/bin',
-    '/usr/local/sbin',
-    path.join(home, '.local', 'bin'),
-    path.join(home, 'bin'),
-    // 常见 Node 版本管理器默认 shim
-    path.join(home, '.volta', 'bin'),
-    path.join(home, '.fnm', 'current', 'bin'),
-    path.join(home, '.nvm', 'current', 'bin'),
-    path.join(home, '.asdf', 'shims'),
-    path.join(home, '.local', 'share', 'mise', 'shims'),
-    path.join(home, '.bun', 'bin'),
-    path.join(home, '.deno', 'bin'),
-    path.join(home, 'Library', 'pnpm')
-  )
-
-  // Ollama macOS App 内置 CLI
-  if (process.platform === 'darwin') {
-    directories.push('/Applications/Ollama.app/Contents/Resources')
-  }
-
-  return [...new Set(directories.filter(dir => existsSync(dir)))]
+  return uniquePaths(directories.filter(dir => existsSync(dir)))
 }
 
 /**
@@ -115,38 +305,38 @@ export function ensureGuiCommandPath(): string {
     return process.env.PATH || ''
   }
 
-  const current = process.env.PATH || ''
-  const currentParts = new Set(current.split(path.delimiter).filter(Boolean))
-  const extras = getCommonBinaryDirectories().filter(
-    dir => !currentParts.has(dir)
-  )
-
-  if (extras.length > 0) {
-    process.env.PATH = [...extras, current].filter(Boolean).join(path.delimiter)
-  }
+  const currentPaths = (process.env.PATH || '').split(path.delimiter)
+  const mergedPaths = uniquePaths([
+    ...currentPaths,
+    ...getWindowsEnvironmentPaths(),
+    ...getCommonBinaryDirectories(),
+  ])
+  process.env.PATH = mergedPaths.join(path.delimiter)
 
   pathAugmented = true
-  return process.env.PATH || ''
+  return process.env.PATH
 }
 
 /**
- * 解析系统命令路径。macOS 图形应用不会读取 shell 配置，因此额外检查
- * Homebrew 目录、常见用户 bin，以及 Ollama App 内置二进制。
+ * 解析系统命令路径。除 PATH 外，还会检查平台常见安装位置。
  */
 export function resolveCommandPath(command: string): string {
   if (path.isAbsolute(command)) return command
 
-  // 内置版本优先，保证硬字幕烧录始终使用含 libass 的完整构建。
+  // 内置版本优先，保证硬字幕烧录使用随包分发的完整构建。
   const bundledCommand = resolveBundledMediaCommandPath(command)
   if (bundledCommand) return bundledCommand
+
+  ensureGuiCommandPath()
 
   const pathCommand = findInPath(command)
   if (pathCommand) return pathCommand
 
-  // 即使 PATH 尚未增强，也主动扫描常见目录
   for (const directory of getCommonBinaryDirectories()) {
-    const candidate = path.join(directory, command)
-    if (isExecutable(candidate)) return candidate
+    for (const candidateName of getCommandCandidates(command)) {
+      const candidate = path.join(directory, candidateName)
+      if (isExecutable(candidate)) return candidate
+    }
   }
 
   if (process.platform === 'darwin' && HOMEBREW_MEDIA_COMMANDS.has(command)) {
@@ -158,13 +348,11 @@ export function resolveCommandPath(command: string): string {
     }
   }
 
-  // Ollama 官方 macOS 安装路径
   if (command === 'ollama' && process.platform === 'darwin') {
     const appBinary = '/Applications/Ollama.app/Contents/Resources/ollama'
     if (isExecutable(appBinary)) return appBinary
   }
 
-  // 保留原命令，让 child_process 返回明确的 ENOENT 或权限错误。
   return command
 }
 
