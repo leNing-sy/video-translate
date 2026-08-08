@@ -38,7 +38,10 @@ export async function MainWindow() {
   })
 
   window.webContents.on('did-finish-load', () => {
-    if (ENVIRONMENT.IS_DEV) {
+    if (
+      ENVIRONMENT.IS_DEV &&
+      process.env.VIDEO_TRANSLATE_OPEN_DEVTOOLS === '1'
+    ) {
       window.webContents.openDevTools({ mode: 'detach' })
     }
 
