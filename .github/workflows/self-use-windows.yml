@@ -40,13 +40,13 @@ jobs:
 
       - name: Check customized file formatting
         continue-on-error: true
-        run: pnpm exec oxfmt --check apps/desktop/src/main/index.ts apps/desktop/src/preload/index.ts apps/desktop/src/renderer/components/settings/SettingsPanel.tsx apps/desktop/src/renderer/components/task/TaskList.tsx apps/desktop/src/shared/ipc.ts apps/desktop/src/shared/settings.test.ts apps/desktop/src/shared/settings.ts
+        run: pnpm exec oxfmt --check apps/desktop/src/main/index.ts apps/desktop/src/main/utils/command-path.ts apps/desktop/src/main/utils/system-check.test.ts apps/desktop/src/main/windows/main.ts apps/desktop/src/preload/index.ts apps/desktop/src/renderer/components/settings/SettingsPanel.tsx apps/desktop/src/renderer/components/task/TaskList.tsx apps/desktop/src/renderer/components/video/VideoUploader.tsx apps/desktop/src/shared/ipc.ts apps/desktop/src/shared/settings.test.ts apps/desktop/src/shared/settings.ts
 
       - name: Check types
         run: pnpm typecheck
 
-      - name: Run customized settings tests
-        run: pnpm --filter video-translate exec vitest run src/shared/settings.test.ts
+      - name: Run customized tests
+        run: pnpm --filter video-translate exec vitest run src/shared/settings.test.ts src/main/utils/system-check.test.ts
 
       - name: Run desktop test suite
         continue-on-error: true
