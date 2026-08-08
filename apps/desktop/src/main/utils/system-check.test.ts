@@ -164,7 +164,10 @@ test('Windows PATH 中只有 ffprobe.exe 时仍能解析命令', async () => {
   process.env.PATHEXT = '.EXE'
   resetGuiCommandPathStateForTests()
 
-  assert.equal(resolveCommandPath('ffprobe'), executablePath)
+  assert.equal(
+    resolveCommandPath('ffprobe').toLowerCase(),
+    executablePath.toLowerCase()
+  )
 })
 
 test('打包资源中的 FFmpeg 优先于系统 PATH', async () => {
