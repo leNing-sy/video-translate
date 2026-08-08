@@ -447,8 +447,8 @@ export function VideoUploader({
             </h2>
             <p className="text-sm text-muted-foreground">
               {isDocument
-                ? '视频 MP4/MKV/… · 音频 MP3/WAV/M4A/… · 最大 2GB'
-                : 'MP4 / AVI / MOV / MKV / WebM / WMV / FLV · 最大 2GB'}
+                ? '支持常见音视频格式和大文件，速度取决于媒体时长与电脑性能'
+                : '支持常见视频格式和大文件，速度取决于视频时长与电脑性能'}
             </p>
           </div>
 
