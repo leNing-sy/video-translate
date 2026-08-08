@@ -629,8 +629,8 @@ export function SettingsPanel() {
                   }))
                 }}
                 items={{
-                  'output-subdirectory': 'output 子目录（默认）',
-                  'source-directory': '源视频同目录',
+                  'output-subdirectory': 'output 子目录',
+                  'source-directory': '源视频同目录（默认）',
                 }}
               >
                 <SelectTrigger
@@ -641,10 +641,10 @@ export function SettingsPanel() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="output-subdirectory">
-                    output 子目录（默认）
+                    output 子目录
                   </SelectItem>
                   <SelectItem value="source-directory">
-                    源视频同目录
+                    源视频同目录（默认）
                   </SelectItem>
                 </SelectContent>
               </Select>

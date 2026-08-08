@@ -84,7 +84,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   sourceLanguage: 'auto',
   targetLanguage: 'zh',
   outputFormat: 'srt',
-  subtitleOutputLocation: 'output-subdirectory',
+  subtitleOutputLocation: 'source-directory',
   onlineTranslationSite: 'sublingo',
   polishTranscript: true,
   polishProvider: 'ollama',
@@ -118,9 +118,10 @@ function normalizeSubtitleProcessingMode(
 function normalizeSubtitleOutputLocation(
   value?: string | null
 ): SubtitleOutputLocation {
-  return value === 'source-directory'
-    ? 'source-directory'
-    : 'output-subdirectory'
+  if (value === 'source-directory' || value === 'output-subdirectory') {
+    return value
+  }
+  return DEFAULT_APP_SETTINGS.subtitleOutputLocation
 }
 
 export function normalizeOnlineTranslationSite(

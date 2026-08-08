@@ -62,9 +62,14 @@ test('normalizeAppSettings 忽略非法 polishProvider', () => {
   assert.equal(settings.polishProvider, 'ollama')
 })
 
-test('normalizeAppSettings 规范化字幕输出位置', () => {
+test('normalizeAppSettings 默认输出到源目录并保留显式选择', () => {
   assert.equal(
     normalizeAppSettings({}).subtitleOutputLocation,
+    'source-directory'
+  )
+  assert.equal(
+    normalizeAppSettings({ subtitleOutputLocation: 'output-subdirectory' })
+      .subtitleOutputLocation,
     'output-subdirectory'
   )
   assert.equal(
@@ -75,7 +80,7 @@ test('normalizeAppSettings 规范化字幕输出位置', () => {
   assert.equal(
     normalizeAppSettings({ subtitleOutputLocation: 'invalid' as never })
       .subtitleOutputLocation,
-    'output-subdirectory'
+    'source-directory'
   )
 })
 
