@@ -90,9 +90,10 @@ export class TaskManager {
   private tempLogs = new Map<string, TaskLog[]>()
   /** 任务级 AbortController：pause / delete 协作取消 */
   private abortControllers = new Map<string, AbortController>()
-  /** 简单串行队列，避免多文件并行打爆本机 */
+  /** 任务队列：最多 3 个任务并发，避免多文件并行打爆本机 */
   private runQueue: Array<() => Promise<void>> = []
-  private queueRunning = false
+  private runningCount = 0
+  private readonly MAX_CONCURRENT_TASKS = 3
 
   constructor() {
     this.loadActiveTasks()
@@ -358,15 +359,22 @@ export class TaskManager {
   }
 
   private async drainQueue(): Promise<void> {
-    if (this.queueRunning) return
-    this.queueRunning = true
-    try {
-      while (this.runQueue.length > 0) {
-        const job = this.runQueue.shift()
-        if (job) await job()
+    while (
+      this.runQueue.length > 0 &&
+      this.runningCount < this.MAX_CONCURRENT_TASKS
+    ) {
+      const job = this.runQueue.shift()
+      if (job) {
+        this.runningCount++
+        job()
+          .finally(() => {
+            this.runningCount--
+            void this.drainQueue()
+          })
+          .catch(err => {
+            console.error('[TaskManager] 任务执行异常:', err)
+          })
       }
-    } finally {
-      this.queueRunning = false
     }
   }
 
