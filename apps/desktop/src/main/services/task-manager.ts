@@ -55,6 +55,10 @@ import {
   resolveSubtitleColors,
   runTranslationPipeline,
 } from './translation-pipeline'
+import {
+  TaskRunCoordinator,
+  type TaskRunRequest,
+} from './task-run-coordinator'
 
 export interface CreateTaskOptions extends Partial<TaskCreationSettings> {
   filePath: string
@@ -88,12 +92,17 @@ export class TaskManager {
   private activeTasks = new Map<string, TranslationTask>()
   private mainWindow: BrowserWindow | null = null
   private tempLogs = new Map<string, TaskLog[]>()
-  /** 任务级 AbortController：pause / delete 协作取消 */
+  /** 补烧硬字幕流程使用的 AbortController；主任务运行实例使用 scheduledControllers。 */
   private abortControllers = new Map<string, AbortController>()
-  /** 任务队列：最多 3 个任务并发，避免多文件并行打爆本机 */
-  private runQueue: Array<() => Promise<void>> = []
-  private runningCount = 0
   private readonly MAX_CONCURRENT_TASKS = 3
+  private readonly runCoordinator = new TaskRunCoordinator(
+    this.MAX_CONCURRENT_TASKS
+  )
+  /** 每个主任务运行实例独立持有 controller，避免旧实例清掉新实例的 controller。 */
+  private readonly scheduledControllers = new Map<
+    string,
+    { runId: string; controller: AbortController }
+  >()
 
   constructor() {
     this.loadActiveTasks()
@@ -354,68 +363,75 @@ export class TaskManager {
   }
 
   private enqueueRun(taskId: string): void {
-    this.runQueue.push(() => this.processTask(taskId))
+    const run = this.runCoordinator.enqueue(taskId)
+    if (!run) return
     void this.drainQueue()
   }
 
   private async drainQueue(): Promise<void> {
-    while (
-      this.runQueue.length > 0 &&
-      this.runningCount < this.MAX_CONCURRENT_TASKS
-    ) {
-      const job = this.runQueue.shift()
-      if (job) {
-        this.runningCount++
-        job()
-          .finally(() => {
-            this.runningCount--
-            void this.drainQueue()
-          })
-          .catch(err => {
-            console.error('[TaskManager] 任务执行异常:', err)
-          })
-      }
+    while (true) {
+      const run = this.runCoordinator.takeNext()
+      if (!run) return
+
+      void this.processTask(run)
+        .catch(error => {
+          console.error('[TaskManager] 任务执行异常:', error)
+        })
+        .finally(() => {
+          void this.drainQueue()
+        })
     }
   }
 
-  private async processTask(taskId: string): Promise<void> {
-    const task =
-      this.activeTasks.get(taskId) ?? databaseManager.getTranslationTask(taskId)
-    if (!task) {
-      console.error(`任务 ${taskId} 不存在`)
-      return
-    }
-
-    // 排队期间已被暂停/删除则不再启动
-    if (
-      task.status === TaskStatus.PAUSED ||
-      task.status === TaskStatus.CANCELLED
-    ) {
-      return
-    }
-
-    this.activeTasks.set(taskId, task)
-    const options = this.resolveOptions(task)
-    // 确保 options 已落库（旧任务 resume 时也会补写）
-    task.options = options
-    databaseManager.saveTaskOptions(taskId, options)
-
-    const controller = new AbortController()
-    this.abortControllers.set(taskId, controller)
+  private async processTask(run: TaskRunRequest): Promise<void> {
+    const { taskId } = run
+    let controller: AbortController | undefined
 
     try {
+      const task =
+        this.activeTasks.get(taskId) ?? databaseManager.getTranslationTask(taskId)
+      if (!task || !this.isCurrentRun(run)) {
+        if (!task) console.error(`任务 ${taskId} 不存在`)
+        return
+      }
+
+      // 排队期间已被暂停/删除则不再启动
+      if (
+        task.status === TaskStatus.PAUSED ||
+        task.status === TaskStatus.CANCELLED
+      ) {
+        return
+      }
+
+      this.activeTasks.set(taskId, task)
+      controller = new AbortController()
+      this.scheduledControllers.set(taskId, {
+        runId: run.runId,
+        controller,
+      })
+
+      const options = this.resolveOptions(task)
+      // 确保 options 已落库（旧任务 resume 时也会补写）
+      task.options = options
+      databaseManager.saveTaskOptions(taskId, options)
+
+      if (!this.isCurrentRun(run)) return
+
       // 在线任务：先下载到本地，再进入对应流水线
-      await this.ensureLocalVideoReady(task, controller.signal)
+      await this.ensureLocalVideoReady(task, run, controller.signal)
+      if (!this.isCurrentRun(run)) return
 
       const hooks = {
-        onLog: (level: TaskLog['level'], message: string, details?: string) =>
-          this.addTaskLog(taskId, level, message, details),
+        onLog: (level: TaskLog['level'], message: string, details?: string) => {
+          this.addRunLog(run, level, message, details)
+        },
         onStatus: (
           status: TaskStatus,
           progress?: number,
           errorMessage?: string
-        ) => this.updateTaskStatus(taskId, status, progress, errorMessage),
+        ) => this.updateRunStatus(run, status, progress, errorMessage),
         onArtifacts: (artifacts: TaskOutputArtifacts) => {
+          if (!this.isCurrentRun(run)) return
           const taskRef = this.activeTasks.get(taskId)
           if (taskRef) {
             taskRef.outputArtifacts = artifacts
@@ -423,10 +439,12 @@ export class TaskManager {
           databaseManager.saveTaskArtifacts(taskId, artifacts)
         },
         onSegments: (segments: TranscriptionSegment[]) => {
+          if (!this.isCurrentRun(run)) return
           const taskRef = this.activeTasks.get(taskId)
           if (taskRef) taskRef.segments = segments
         },
         onDetectedLanguage: (language: TranslationTask['detectedLanguage']) => {
+          if (!this.isCurrentRun(run)) return
           const taskRef = this.activeTasks.get(taskId)
           if (taskRef) {
             taskRef.detectedLanguage = language
@@ -444,7 +462,7 @@ export class TaskManager {
           hooks,
           controller.signal
         )
-        await this.finalizeTask(taskId, undefined, context.outputArtifacts)
+        await this.finalizeTask(run, undefined, context.outputArtifacts)
       } else {
         const context = await runTranslationPipeline(
           task,
@@ -453,27 +471,69 @@ export class TaskManager {
           controller.signal
         )
         await this.finalizeTask(
-          taskId,
+          run,
           context.subtitles,
           context.outputArtifacts
         )
       }
     } catch (error) {
-      if (isAbortError(error) || controller.signal.aborted) {
+      if (
+        controller &&
+        (isAbortError(error) || controller.signal.aborted)
+      ) {
         const current = this.activeTasks.get(taskId)
-        // pause 会预先设 PAUSED；delete 会移除；其余视为取消
+        // pause 会预先设 PAUSED；若已立即 resume，则等待本次实例退出后再启动新实例。
         if (current?.status === TaskStatus.PAUSED) {
-          this.addTaskLog(taskId, 'warn', '任务已暂停')
-        } else if (this.activeTasks.has(taskId)) {
-          await this.updateTaskStatus(taskId, TaskStatus.CANCELLED, undefined)
-          this.addTaskLog(taskId, 'warn', '任务已取消')
+          this.addRunLog(run, 'warn', '任务已暂停')
+        } else if (
+          this.runCoordinator.hasPendingResume(taskId)
+        ) {
+          // resumeTask 已将状态设为 PENDING，不要让旧实例把它改回 CANCELLED。
+        } else if (current && this.isCurrentRun(run)) {
+          await this.updateRunStatus(run, TaskStatus.CANCELLED, undefined)
+          this.addRunLog(run, 'warn', '任务已取消')
         }
       } else {
-        await this.failTask(taskId, error)
+        await this.failTask(run, error)
       }
     } finally {
-      this.abortControllers.delete(taskId)
+      const scheduled = this.scheduledControllers.get(taskId)
+      if (scheduled?.runId === run.runId) {
+        this.scheduledControllers.delete(taskId)
+      }
+
+      const finished = this.runCoordinator.finish(run)
+      if (finished.resumeRequested) {
+        const current = this.activeTasks.get(taskId)
+        if (current?.status === TaskStatus.PENDING) {
+          this.enqueueRun(taskId)
+        }
+      }
     }
+  }
+
+  private isCurrentRun(run: TaskRunRequest): boolean {
+    return this.runCoordinator.isCurrent(run)
+  }
+
+  private addRunLog(
+    run: TaskRunRequest,
+    level: TaskLog['level'],
+    message: string,
+    details?: string
+  ): void {
+    if (!this.isCurrentRun(run)) return
+    this.addTaskLog(run.taskId, level, message, details)
+  }
+
+  private async updateRunStatus(
+    run: TaskRunRequest,
+    status: TaskStatus,
+    progress?: number,
+    errorMessage?: string
+  ): Promise<void> {
+    if (!this.isCurrentRun(run)) return
+    await this.updateTaskStatus(run.taskId, status, progress, errorMessage)
   }
 
   /**
@@ -482,10 +542,11 @@ export class TaskManager {
    */
   private async ensureLocalVideoReady(
     task: TranslationTask,
+    run: TaskRunRequest,
     signal: AbortSignal
   ): Promise<void> {
     const sourceUrl = task.sourceUrl || task.videoFile.sourceUrl
-    if (!sourceUrl) return
+    if (!sourceUrl || !this.isCurrentRun(run)) return
 
     const downloadDir = path.join(getDownloadsRoot(), task.id)
 
@@ -493,20 +554,20 @@ export class TaskManager {
       task.videoFile.format !== 'pending' &&
       (await fileLooksReady(task.videoFile.path))
     ) {
-      this.addTaskLog(
-        task.id,
+      this.addRunLog(
+        run,
         'info',
         '已存在本地下载文件，跳过重新下载',
         path.basename(task.videoFile.path)
       )
       // 仍尝试恢复/发现平台字幕（可能上次未写入 path 字段）
-      await this.attachPlatformSubtitleIfPresent(task, downloadDir)
+      await this.attachPlatformSubtitleIfPresent(task, downloadDir, run)
       return
     }
 
-    await this.updateTaskStatus(task.id, TaskStatus.DOWNLOADING, 0)
-    this.addTaskLog(
-      task.id,
+    await this.updateRunStatus(run, TaskStatus.DOWNLOADING, 0)
+    this.addRunLog(
+      run,
       'info',
       '开始下载在线视频（优先抓取平台字幕）',
       displayUrl(sourceUrl)
@@ -523,21 +584,22 @@ export class TaskManager {
       targetLanguage: task.targetLanguage,
       writeSubtitles: true,
       onProgress: progress => {
+        if (!this.isCurrentRun(run)) return
         const percent =
           progress.percent !== undefined
             ? Math.min(95, Math.max(0, progress.percent))
             : undefined
         if (percent !== undefined) {
-          void this.updateTaskStatus(
-            task.id,
+          void this.updateRunStatus(
+            run,
             TaskStatus.DOWNLOADING,
             Math.round(percent * 0.15) // 下载占整体约 0–15%
           )
           // 每跨约 10% 记一条日志，避免刷屏
           if (percent - lastLoggedPercent >= 10) {
             lastLoggedPercent = percent
-            this.addTaskLog(
-              task.id,
+            this.addRunLog(
+              run,
               'info',
               `下载进度 ${percent.toFixed(0)}%`,
               progress.message
@@ -547,6 +609,8 @@ export class TaskManager {
       },
     })
 
+    if (!this.isCurrentRun(run)) return
+
     let duration = 0
     let format = result.format
     try {
@@ -554,13 +618,15 @@ export class TaskManager {
       duration = info.duration
       format = info.format || result.format
     } catch (error) {
-      this.addTaskLog(
-        task.id,
+      this.addRunLog(
+        run,
         'warn',
         '下载完成但读取视频信息失败，将使用默认元数据',
         error instanceof Error ? error.message : String(error)
       )
     }
+
+    if (!this.isCurrentRun(run)) return
 
     const safeName = sanitizeDownloadedName(result.title, result.format)
     const videoFile: VideoFile = {
@@ -585,8 +651,8 @@ export class TaskManager {
         result.platformSubtitle.path,
         result.platformSubtitle.language
       )
-      this.addTaskLog(
-        task.id,
+      this.addRunLog(
+        run,
         'success',
         '已获取平台字幕，将跳过语音识别',
         `${result.platformSubtitle.language}` +
@@ -599,8 +665,8 @@ export class TaskManager {
       task.platformSubtitlePath = undefined
       task.platformSubtitleLanguage = undefined
       databaseManager.savePlatformSubtitle(task.id, null, null)
-      this.addTaskLog(
-        task.id,
+      this.addRunLog(
+        run,
         'info',
         '未找到可用平台字幕，将使用本地 ASR 识别'
       )
@@ -609,26 +675,28 @@ export class TaskManager {
     this.activeTasks.set(task.id, task)
     this.notifyTaskUpdate(task)
 
-    this.addTaskLog(
-      task.id,
+    this.addRunLog(
+      run,
       'success',
       '视频下载完成',
       `${safeName}（${formatFileSize(result.size)}）`
     )
-    await this.updateTaskStatus(task.id, TaskStatus.DOWNLOADING, 15)
+    await this.updateRunStatus(run, TaskStatus.DOWNLOADING, 15)
   }
 
   /** 从下载目录恢复平台字幕路径（跳过重下时） */
   private async attachPlatformSubtitleIfPresent(
     task: TranslationTask,
-    downloadDir: string
+    downloadDir: string,
+    run: TaskRunRequest
   ): Promise<void> {
+    if (!this.isCurrentRun(run)) return
     if (
       task.platformSubtitlePath &&
       (await fileLooksReady(task.platformSubtitlePath))
     ) {
-      this.addTaskLog(
-        task.id,
+      this.addRunLog(
+        run,
         'info',
         '使用已缓存的平台字幕',
         path.basename(task.platformSubtitlePath)
@@ -640,6 +708,7 @@ export class TaskManager {
       sourceLanguage: task.sourceLanguage,
       targetLanguage: task.targetLanguage,
     })
+    if (!this.isCurrentRun(run)) return
     if (!selected) {
       task.platformSubtitlePath = undefined
       task.platformSubtitleLanguage = undefined
@@ -656,8 +725,8 @@ export class TaskManager {
     )
     this.activeTasks.set(task.id, task)
     this.notifyTaskUpdate(task)
-    this.addTaskLog(
-      task.id,
+    this.addRunLog(
+      run,
       'success',
       '发现平台字幕，将跳过语音识别',
       `${selected.language} · ${path.basename(selected.path)}`
@@ -665,28 +734,30 @@ export class TaskManager {
   }
 
   private async finalizeTask(
-    taskId: string,
+    run: TaskRunRequest,
     subtitles?: TranslationTask['subtitles'],
     artifacts?: TaskOutputArtifacts
   ): Promise<void> {
-    const task = this.activeTasks.get(taskId)
+    if (!this.isCurrentRun(run)) return
+    const task = this.activeTasks.get(run.taskId)
     if (task && subtitles) {
       task.subtitles = subtitles
     }
     if (task && artifacts) {
       task.outputArtifacts = artifacts
-      databaseManager.saveTaskArtifacts(taskId, artifacts)
+      databaseManager.saveTaskArtifacts(run.taskId, artifacts)
     }
 
-    this.addTaskLog(taskId, 'success', '任务处理完成')
-    await this.updateTaskStatus(taskId, TaskStatus.COMPLETED, 100)
+    this.addRunLog(run, 'success', '任务处理完成')
+    await this.updateRunStatus(run, TaskStatus.COMPLETED, 100)
   }
 
-  private async failTask(taskId: string, error: unknown): Promise<void> {
+  private async failTask(run: TaskRunRequest, error: unknown): Promise<void> {
+    if (!this.isCurrentRun(run)) return
     const message = error instanceof Error ? error.message : String(error)
-    this.addTaskLog(taskId, 'error', '任务处理失败', message)
-    await this.updateTaskStatus(taskId, TaskStatus.FAILED, undefined, message)
-    console.error(`任务 ${taskId} 处理失败:`, error)
+    this.addRunLog(run, 'error', '任务处理失败', message)
+    await this.updateRunStatus(run, TaskStatus.FAILED, undefined, message)
+    console.error(`任务 ${run.taskId} 处理失败:`, error)
   }
 
   private async updateTaskStatus(
@@ -797,14 +868,24 @@ export class TaskManager {
       this.activeTasks.get(taskId) ?? databaseManager.getTranslationTask(taskId)
     if (!task) return
 
+    const activeRun = this.runCoordinator.pause(taskId)
     task.status = TaskStatus.PAUSED
     this.activeTasks.set(taskId, task)
     databaseManager.updateTaskStatus(taskId, TaskStatus.PAUSED)
     this.addTaskLog(taskId, 'info', '正在暂停任务…')
     this.notifyTaskUpdate(task)
 
-    const controller = this.abortControllers.get(taskId)
-    controller?.abort(createAbortError('任务已暂停'))
+    const scheduled = this.scheduledControllers.get(taskId)
+    if (
+      activeRun &&
+      scheduled?.runId === activeRun.runId
+    ) {
+      scheduled.controller.abort(createAbortError('任务已暂停'))
+    }
+    // 补烧硬字幕仍使用独立 controller；保持原有暂停/取消行为。
+    this.abortControllers
+      .get(taskId)
+      ?.abort(createAbortError('任务已暂停'))
   }
 
   resumeTask(taskId: string): void {
@@ -826,12 +907,18 @@ export class TaskManager {
     databaseManager.updateTaskStatus(taskId, TaskStatus.PENDING, 0, '')
     this.addTaskLog(taskId, 'info', '恢复任务（将重新执行流水线）')
     this.notifyTaskUpdate(task)
-    this.enqueueRun(taskId)
+    this.runCoordinator.resume(taskId)
+    void this.drainQueue()
   }
 
   deleteTask(taskId: string): void {
-    const controller = this.abortControllers.get(taskId)
-    controller?.abort(createAbortError('任务已删除'))
+    const activeRun = this.runCoordinator.cancel(taskId)
+    const scheduled = this.scheduledControllers.get(taskId)
+    if (activeRun && scheduled?.runId === activeRun.runId) {
+      scheduled.controller.abort(createAbortError('任务已删除'))
+    }
+    this.scheduledControllers.delete(taskId)
+    this.abortControllers.get(taskId)?.abort(createAbortError('任务已删除'))
     this.abortControllers.delete(taskId)
     this.activeTasks.delete(taskId)
     this.tempLogs.delete(taskId)
@@ -871,6 +958,13 @@ export class TaskManager {
         continue
       }
 
+      const activeRun = this.runCoordinator.cancel(taskId)
+      const scheduled = this.scheduledControllers.get(taskId)
+      if (activeRun && scheduled?.runId === activeRun.runId) {
+        scheduled.controller.abort(createAbortError('任务已删除'))
+      }
+      this.scheduledControllers.delete(taskId)
+      this.abortControllers.get(taskId)?.abort(createAbortError('任务已删除'))
       this.abortControllers.delete(taskId)
       this.activeTasks.delete(taskId)
       this.tempLogs.delete(taskId)
@@ -890,10 +984,12 @@ export class TaskManager {
 
     return { deletedTaskIds, rejected }
   }
+
   retryTask(taskId: string): void {
     const task =
       this.activeTasks.get(taskId) ?? databaseManager.getTranslationTask(taskId)
     if (!task) return
+    if (this.runCoordinator.hasActive(taskId)) return
 
     task.status = TaskStatus.PENDING
     task.progress = 0
@@ -1075,6 +1171,11 @@ export class TaskManager {
   }
 
   cleanup(): void {
+    this.runCoordinator.clearPending()
+    for (const { controller } of this.scheduledControllers.values()) {
+      controller.abort(createAbortError('应用退出'))
+    }
+    this.scheduledControllers.clear()
     for (const controller of this.abortControllers.values()) {
       controller.abort(createAbortError('应用退出'))
     }
